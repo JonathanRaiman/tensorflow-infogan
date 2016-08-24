@@ -38,13 +38,17 @@ def create_progress_bar(message):
     pbar = progressbar.ProgressBar(widgets=widgets)
     return pbar
 
+def identity(x):
+    return x
+
 def generator_forward(z, reuse=None, name="generator"):
     with tf.variable_scope(name, reuse=reuse):
         z_shape = tf.shape(z)
         out = layers.fully_connected(
             z,
             num_outputs=1568,
-            activation_fn=leaky_rectify
+            activation_fn=leaky_rectify,
+            normalizer_fn=identity
         )
         out = tf.reshape(
             out,
@@ -57,14 +61,16 @@ def generator_forward(z, reuse=None, name="generator"):
             num_outputs=64,
             kernel_size=4,
             stride=2,
-            activation_fn=leaky_rectify
+            activation_fn=leaky_rectify,
+            normalizer_fn=identity
         )
         out = layers.convolution2d_transpose(
             out,
             num_outputs=32,
             kernel_size=4,
             stride=2,
-            activation_fn=leaky_rectify
+            activation_fn=leaky_rectify,
+            normalizer_fn=identity
         )
         out = layers.convolution2d(
             out,
