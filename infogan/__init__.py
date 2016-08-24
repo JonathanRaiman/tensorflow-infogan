@@ -41,22 +41,27 @@ def create_progress_bar(message):
 def generator_forward(z, reuse=None, name="generator"):
     with tf.variable_scope(name, reuse=reuse):
         z_shape = tf.shape(z)
-        z_spatial = tf.reshape(
+        out = layers.fully_connected(
             z,
+            num_outputs=1568,
+            activation_fn=leaky_rectify
+        )
+        out = tf.reshape(
+            out,
             tf.pack([
-                z_shape[0], 7, 7, 2
+                z_shape[0], 7, 7, 32
             ])
         )
         out = layers.convolution2d_transpose(
-            z_spatial,
-            num_outputs=32,
+            out,
+            num_outputs=64,
             kernel_size=4,
             stride=2,
             activation_fn=leaky_rectify
         )
         out = layers.convolution2d_transpose(
             out,
-            num_outputs=16,
+            num_outputs=32,
             kernel_size=4,
             stride=2,
             activation_fn=leaky_rectify
