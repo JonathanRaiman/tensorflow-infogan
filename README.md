@@ -23,7 +23,7 @@ tensorboard --logdir MNIST_v1_log/
 
 ## Expected Result
 
-You should now images like these:
+You should now see images like these show up:
 
 ![fake number](sample_images/individualImage.png)
 ![fake number](sample_images/individualImage-1.png)
