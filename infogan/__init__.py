@@ -115,7 +115,12 @@ def discriminator_forward(img, reuse=None, name="discriminator"):
 
 
 def parse_args():
-    paarser = ér
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--generator_lr", type=float, default=0.001)
+    parser.add_argument("--discriminator_lr", type=float, default=0.00005)
+    return parser.parse_args()
 
 def variables_in_current_scope():
     return tf.get_collection(tf.GraphKeys.VARIABLES, scope=tf.get_variable_scope().name)
@@ -125,13 +130,14 @@ def scope_variables(name):
         return variables_in_current_scope()
 
 def train():
+    args = parse_args()
     np.random.seed(1234)
     mnist = load_dataset()
-    batch_size = 64
-    n_epochs = 100
+    batch_size = args.batch_size
+    n_epochs = args.epochs
     z_size = 7 * 7 * 2
-    discriminator_lr = tf.get_variable("discriminator_lr", (), initializer=tf.constant_initializer(0.00005))
-    generator_lr =  tf.get_variable("generator_lr", (), initializer=tf.constant_initializer(0.001))
+    discriminator_lr = tf.get_variable("discriminator_lr", (), initializer=tf.constant_initializer(args.discriminator_lr))
+    generator_lr =  tf.get_variable("generator_lr", (), initializer=tf.constant_initializer(args.generator_lr))
     pixel_height = 28
     pixel_width = 28
     n_channels = 1
