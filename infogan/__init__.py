@@ -168,7 +168,7 @@ def train():
     train_generator = generator_solver.minimize(-ll_believing_fake_images_are_real, var_list=generator_variables)
     train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
 
-    tf.image_summary("fake images", fake_images, max_images=4)
+    tf.image_summary("fake images", fake_images, max_images=10)
     summary_op = tf.merge_all_summaries()
     journalist = tf.train.SummaryWriter("MNIST_v1_log", flush_secs=10)
 
@@ -205,7 +205,8 @@ def train():
 
                 iters += 1
 
-                if iters % 100 == 0:
+                if iters % 200 == 0:
+                    noise = np.random.standard_normal(size=(batch_size, z_size))
                     current_summary = sess.run(summary_op, {z_vectors:noise})
                     journalist.add_summary(current_summary)
                     journalist.flush()
