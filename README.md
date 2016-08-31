@@ -1,7 +1,7 @@
 InfoGAN
 -------
 
-This repository contains a straightforward implementation of [Generative Adverserial Networks](https://arxiv.org/abs/1406.2661) trained to fool a discriminator that sees real MNIST images, along with [Mutual Information Generative Adverserial Networks (InfoGAN)](https://arxiv.org/abs/1606.03657).
+This repository contains a straightforward implementation of [Generative Adversarial Networks](https://arxiv.org/abs/1406.2661) trained to fool a discriminator that sees real MNIST images, along with [Mutual Information Generative Adversarial Networks (InfoGAN)](https://arxiv.org/abs/1606.03657).
 
 ## Usage
 
