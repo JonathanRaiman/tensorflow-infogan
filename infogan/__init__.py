@@ -196,8 +196,8 @@ def reconstruct_mutual_info(true_categorical, true_continuous, hidden, is_traini
         )
 
         # distribution logic
-        prob_categorical = tf.nn.softmax(out[:, :num_categorical]) + TINY
-        ll_categorical = tf.reduce_sum(tf.log(prob_categorical) * true_categorical, reduction_indices=1)
+        prob_categorical = tf.nn.softmax(out[:, :num_categorical])
+        ll_categorical = tf.reduce_sum(tf.log(prob_categorical + TINY) * true_categorical, reduction_indices=1)
 
         mean_contig = tf.nn.tanh(out[:, num_categorical:num_categorical + num_continuous])
         std_contig = tf.sqrt(tf.exp(out[:, num_categorical + num_continuous:num_categorical + num_continuous * 2]))
@@ -324,15 +324,15 @@ def train():
     prob_true = discriminator_true["prob"]
 
     # discriminator should maximize:
-    ll_believing_fake_images_are_fake = tf.log(1.0 - prob_fake)
-    ll_true_images = tf.log(prob_true)
+    ll_believing_fake_images_are_fake = tf.log(1.0 - prob_fake + TINY)
+    ll_true_images = tf.log(prob_true + TINY)
     discriminator_obj = (
         tf.reduce_mean(ll_believing_fake_images_are_fake) +
         tf.reduce_mean(ll_true_images)
     )
 
     # generator should maximize:
-    ll_believing_fake_images_are_real = tf.reduce_mean(tf.log(prob_fake))
+    ll_believing_fake_images_are_real = tf.reduce_mean(tf.log(prob_fake + TINY))
 
     discriminator_solver = tf.train.AdamOptimizer(
         learning_rate=discriminator_lr,
@@ -412,7 +412,7 @@ def train():
 
                 iters += 1
 
-                if iters % 200 == 0:
+                if iters % 20 == 0:
                     if use_infogan:
                         for i in range(num_categorical):
                             partial_summary = sess.run(img_summaries[i], {
