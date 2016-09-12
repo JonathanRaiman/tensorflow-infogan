@@ -283,12 +283,13 @@ def create_gan_noise_sample(style_size):
 def plot_grid(grid_data):
     if len(grid_data) == 0:
         return None
+    n_images = min([len(v) for v in grid_data])
     fig, axes = plt.subplots(
-        len(grid_data), len(grid_data[0])
+        len(grid_data), n_images
     )
 
     for images in grid_data:
-        for image_idx, image in enumerate(images[:len(grid_data[0])]):
+        for image_idx, image in enumerate(images[:n_images]):
             axes[key, image_idx].imshow(
                 image.reshape(image.shape[0], image.shape[1]),
                 cmap=plt.cm.Greys
