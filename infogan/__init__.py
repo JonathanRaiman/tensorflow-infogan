@@ -371,6 +371,9 @@ def train():
         mutual_info_variables = scope_variables("mutual_info")
         discriminator_obj = discriminator_obj + ll_mutual_info
         discriminator_variables = discriminator_variables + mutual_info_variables
+        nll_mutual_info = -ll_mutual_info
+    else:
+        nll_mutual_info = tf.noop
 
     train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
 
