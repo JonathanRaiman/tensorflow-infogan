@@ -124,7 +124,7 @@ def generator_forward(z, is_training, reuse=None, name="generator", use_batch_no
             num_outputs=1,
             kernel_size=4,
             stride=2,
-            activation_fn=tf.nn.relu
+            activation_fn=tf.nn.sigmoid
         )
     return out
 
@@ -378,7 +378,7 @@ def train():
         nll_mutual_info = -ll_mutual_info
         train_mutual_info = mutual_info_solver.minimize(
             nll_mutual_info,
-            var_list=generator_variables + mutual_info_variables
+            var_list=generator_variables + mutual_info_variables + discriminator_variables
         )
     else:
         nll_mutual_info = noop
@@ -402,7 +402,7 @@ def train():
                 noise = sample_noise(batch_size)
                 _, disc_obj, _, infogan_obj = sess.run(
                     [train_discriminator, discriminator_obj, train_mutual_info, nll_mutual_info],
-                    feed_dict={true_images:batch, z_vectors:noise, is_training_discriminator:True, is_training_generator:False}
+                    feed_dict={true_images:batch, z_vectors:noise, is_training_discriminator:True, is_training_generator:True}
                 )
                 disc_epoch_obj += disc_obj
 
