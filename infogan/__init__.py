@@ -393,7 +393,7 @@ def train():
                 batch = X[idxes[idx:idx + batch_size]]
                 # train discriminator
                 noise = sample_noise(batch_size)
-                _, disc_obj, _, infogan_obj = sess.run(
+                _, disc_obj, infogan_obj = sess.run(
                     [train_discriminator, discriminator_obj, nll_mutual_info],
                     feed_dict={true_images:batch, z_vectors:noise, is_training_discriminator:True, is_training_generator:True}
                 )
