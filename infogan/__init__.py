@@ -6,6 +6,7 @@ import numpy as np
 
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
+import matplotlib.pyplot as plt
 
 from tensorflow.examples.tutorials.mnist import input_data
 
@@ -249,7 +250,9 @@ def create_infogan_categorical_sample(category, num_categorical, num_continuous,
         np.ones(batch_size, dtype=np.int32) * category,
         size=num_categorical
     )
-    continuous = np.random.uniform(-1.0, 1.0, size=(batch_size, num_continuous))
+    continuous = np.zeros((batch_size, num_continuous))
+    for i in range(num_continuous):
+        continuous[:, i] = np.linspace(-1.0, 1.0, batch_size)
     style = np.random.standard_normal(size=(batch_size, style_size))
     return np.hstack([categorical, continuous, style])
 
@@ -270,6 +273,19 @@ def create_gan_noise_sample(style_size):
     def sample(batch_size):
         return np.random.standard_normal(size=(batch_size, style_size))
     return sample
+
+
+def plot_grid(grid_data, grid_width):
+    fig, axes = plt.subplots(
+        len(grid_data), grid_width
+    )
+
+    for key in sorted(grid_data.keys()):
+        for value_idx, value in enumerate(grid_data[key][:grid_width]):
+            axes[key, value_idx] = value.reshape(value.shape[0], value.shape[1])
+
+    plt.setp(axes, xticks=[], yticks=[]);
+    return fig
 
 
 def train():
@@ -382,7 +398,6 @@ def train():
             name="mutual_info"
         )
         mutual_info_variables = scope_variables("mutual_info")
-        generator_obj = generator_obj
         nll_mutual_info = -ll_mutual_info
         train_mutual_info = generator_solver.minimize(
             nll_mutual_info,
@@ -444,20 +459,40 @@ def train():
 
                 if iters % 20 == 0:
                     if use_infogan:
+                        # for i in range(num_categorical):
+                        #     partial_summary = sess.run(img_summaries[i], {
+                        #             z_vectors: create_infogan_categorical_sample(
+                        #                 i,
+                        #                 num_categorical,
+                        #                 num_continuous,
+                        #                 style_size,
+                        #                 batch_size
+                        #             ),
+                        #             is_training_discriminator:False,
+                        #             is_training_generator:False
+                        #         }
+                        #     )
+                        #     journalist.add_summary(partial_summary)
+
+                        images_labels = {}
+                        grid_width = 10
+
                         for i in range(num_categorical):
-                            partial_summary = sess.run(img_summaries[i], {
+                            images_labels[i] = sess.run(fake_images, {
                                     z_vectors: create_infogan_categorical_sample(
                                         i,
                                         num_categorical,
                                         num_continuous,
                                         style_size,
-                                        batch_size
+                                        grid_width
                                     ),
                                     is_training_discriminator:False,
                                     is_training_generator:False
                                 }
                             )
-                            journalist.add_summary(partial_summary)
+                        fig = plot_grid(images_labels, grid_width)
+                        fig.savefig("plotted_images.png", dpi=300, bbox_inches="tight")
+                        plt.close(fig)
                     else:
                         noise = sample_noise(batch_size)
                         current_summary = sess.run(summary_op, {z_vectors:noise})
