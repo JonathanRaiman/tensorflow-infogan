@@ -287,10 +287,10 @@ def plot_grid(grid_data):
         len(grid_data), len(grid_data[0])
     )
 
-    for key in sorted(grid_data.keys()):
-        for value_idx, value in enumerate(grid_data[key][:grid_width]):
-            axes[key, value_idx].imshow(
-                value.reshape(value.shape[0], value.shape[1]),
+    for images in grid_data:
+        for image_idx, image in enumerate(images[:len(grid_data[0])]):
+            axes[key, image_idx].imshow(
+                image.reshape(image.shape[0], image.shape[1]),
                 cmap=plt.cm.Greys
             )
     plt.setp(axes, xticks=[], yticks=[]);
