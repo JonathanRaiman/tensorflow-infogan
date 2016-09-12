@@ -275,15 +275,19 @@ def create_gan_noise_sample(style_size):
     return sample
 
 
-def plot_grid(grid_data, grid_width):
+def plot_grid(grid_data):
+    if len(grid_data) == 0:
+        return None
     fig, axes = plt.subplots(
-        len(grid_data), grid_width
+        len(grid_data), len(grid_data[0])
     )
 
     for key in sorted(grid_data.keys()):
         for value_idx, value in enumerate(grid_data[key][:grid_width]):
-            axes[key, value_idx] = value.reshape(value.shape[0], value.shape[1])
-
+            axes[key, value_idx].imshow(
+                value.reshape(value.shape[0], value.shape[1]),
+                cmap=plt.cm.Greys
+            )
     plt.setp(axes, xticks=[], yticks=[]);
     return fig
 
@@ -474,23 +478,27 @@ def train():
                         #     )
                         #     journalist.add_summary(partial_summary)
 
-                        images_labels = {}
+                        images_labels = []
                         grid_width = 10
 
                         for i in range(num_categorical):
-                            images_labels[i] = sess.run(fake_images, {
-                                    z_vectors: create_infogan_categorical_sample(
-                                        i,
-                                        num_categorical,
-                                        num_continuous,
-                                        style_size,
-                                        grid_width
-                                    ),
-                                    is_training_discriminator:False,
-                                    is_training_generator:False
-                                }
+                            images_labels.append(
+                                sess.run(
+                                    fake_images,
+                                    {
+                                        z_vectors: create_infogan_categorical_sample(
+                                            i,
+                                            num_categorical,
+                                            num_continuous,
+                                            style_size,
+                                            grid_width
+                                        ),
+                                        is_training_discriminator:False,
+                                        is_training_generator:False
+                                    }
+                                )
                             )
-                        fig = plot_grid(images_labels, grid_width)
+                        fig = plot_grid(images_labels)
                         fig.savefig("plotted_images.png", dpi=300, bbox_inches="tight")
                         plt.close(fig)
                     else:
