@@ -78,22 +78,30 @@ def create_progress_bar(message):
 def identity(x):
     return x
 
-def generator_forward(z, is_training, reuse=None, name="generator"):
+def generator_forward(z, is_training, reuse=None, name="generator", use_batch_norm=True):
     with tf.variable_scope(name, reuse=reuse):
         z_shape = tf.shape(z)
         image_size = 28
+
+        if use_batch_norm:
+            fc_batch_norm = layers.batch_norm
+            cnn_batch_norm = conv_batch_norm
+        else:
+            fc_batch_norm = None
+            cnn_batch_norm = None
+
         out = layers.fully_connected(
             z,
             num_outputs=1024,
             activation_fn=tf.nn.relu,
-            normalizer_fn=layers.batch_norm,
+            normalizer_fn=fc_batch_norm,
             normalizer_params={"is_training": is_training, "updates_collections": None}
         )
         out = layers.fully_connected(
             out,
             num_outputs=(image_size // 4) * (image_size // 4) * 128,
             activation_fn=tf.nn.relu,
-            normalizer_fn=layers.batch_norm,
+            normalizer_fn=fc_batch_norm,
             normalizer_params={"is_training": is_training, "updates_collections": None}
         )
         out = tf.reshape(
@@ -108,7 +116,7 @@ def generator_forward(z, is_training, reuse=None, name="generator"):
             kernel_size=4,
             stride=2,
             activation_fn=tf.nn.relu,
-            normalizer_fn=conv_batch_norm,
+            normalizer_fn=cnn_batch_norm,
             normalizer_params={"is_training": is_training}
         )
         out = layers.convolution2d_transpose(
@@ -120,8 +128,16 @@ def generator_forward(z, is_training, reuse=None, name="generator"):
         )
     return out
 
-def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
+def discriminator_forward(img, is_training, reuse=None, name="discriminator", use_batch_norm=True):
     with tf.variable_scope(name, reuse=reuse):
+
+        if use_batch_norm:
+            fc_batch_norm = layers.batch_norm
+            cnn_batch_norm = conv_batch_norm
+        else:
+            fc_batch_norm = None
+            cnn_batch_norm = None
+
         out = layers.convolution2d(
             img,
             num_outputs=64,
@@ -136,7 +152,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             kernel_size=4,
             stride=2,
             normalizer_params={"is_training":is_training},
-            normalizer_fn=conv_batch_norm,
+            normalizer_fn=cnn_batch_norm,
             activation_fn=leaky_rectify,
             scope="my_conv2"
         )
@@ -146,7 +162,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             num_outputs=1024,
             activation_fn=leaky_rectify,
             normalizer_params={"is_training":is_training, "updates_collections": None},
-            normalizer_fn=layers.batch_norm,
+            normalizer_fn=fc_batch_norm,
             scope="my_fc1"
         )
         prob = layers.fully_connected(
@@ -154,7 +170,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             num_outputs=1,
             activation_fn=tf.nn.sigmoid,
             normalizer_params={"is_training":is_training, "updates_collections": None},
-            normalizer_fn=layers.batch_norm,
+            normalizer_fn=fc_batch_norm,
             scope="my_fc2"
         )
     return {"prob":prob, "hidden":out}
@@ -206,6 +222,9 @@ def parse_args():
     # control whether to train GAN or InfoGAN:
     parser.add_argument("--infogan", action="store_true", default=False)
     parser.add_argument("--noinfogan", action="store_false", dest="infogan")
+    # control whether to use Batch Norm:
+    parser.add_argument("--use_batch_norm", action="store_true", default=True)
+    parser.add_argument("--nouse_batch_norm", action="store_false", dest="use_batch_norm")
     return parser.parse_args()
 
 def variables_in_current_scope():
@@ -252,6 +271,7 @@ def train():
     mnist = load_dataset()
     batch_size = args.batch_size
     n_epochs = args.epochs
+    use_batch_norm = args.use_batch_norm
 
     use_infogan = args.infogan
 
@@ -290,9 +310,20 @@ def train():
     is_training_generator = tf.placeholder(tf.bool, [])
 
     fake_images = generator_forward(z_vectors, is_training_generator, name="generator")
-    discriminator_fake = discriminator_forward(fake_images, is_training_discriminator, name="discriminator")
+    discriminator_fake = discriminator_forward(
+        fake_images,
+        is_training_discriminator,
+        name="discriminator",
+        use_batch_norm=use_batch_norm
+    )
     prob_fake = discriminator_fake["prob"]
-    discriminator_true = discriminator_forward(true_images, is_training_discriminator, reuse=True, name="discriminator")
+    discriminator_true = discriminator_forward(
+        true_images,
+        is_training_discriminator,
+        reuse=True,
+        name="discriminator",
+        use_batch_norm=use_batch_norm
+    )
     prob_true = discriminator_true["prob"]
 
     # discriminator should maximize:
@@ -306,8 +337,14 @@ def train():
     # generator should maximize:
     ll_believing_fake_images_are_real = tf.reduce_mean(tf.log(prob_fake))
 
-    discriminator_solver = tf.train.AdamOptimizer(learning_rate=discriminator_lr, beta1=0.5)
-    generator_solver = tf.train.AdamOptimizer(learning_rate=generator_lr, beta1=0.5)
+    discriminator_solver = tf.train.AdamOptimizer(
+        learning_rate=discriminator_lr,
+        beta1=0.5
+    )
+    generator_solver = tf.train.AdamOptimizer(
+        learning_rate=generator_lr,
+        beta1=0.5
+    )
 
     discriminator_variables = scope_variables("discriminator")
     generator_variables = scope_variables("generator")
