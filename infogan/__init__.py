@@ -46,16 +46,25 @@ def identity(x):
 def generator_forward(z, is_training, reuse=None, name="generator"):
     with tf.variable_scope(name, reuse=reuse):
         z_shape = tf.shape(z)
+        image_size = 28
         out = layers.fully_connected(
             z,
-            num_outputs=1568,
-            activation_fn=leaky_rectify,
-            normalizer_fn=identity
+            num_outputs=1024,
+            activation_fn=tf.nn.relu,
+            normalizer_fn=layers.batch_norm,
+            normalizer_params={"is_training": is_training, "updates_collections": None}
+        )
+        out = layers.fully_connected(
+            out,
+            num_outputs=(image_size // 4) * (image_size // 4) * 128,
+            activation_fn=tf.nn.relu,
+            normalizer_fn=layers.batch_norm,
+            normalizer_params={"is_training": is_training, "updates_collections": None}
         )
         out = tf.reshape(
             out,
             tf.pack([
-                z_shape[0], 7, 7, 32
+                z_shape[0], image_size // 4, image_size // 4, 128
             ])
         )
         out = layers.convolution2d_transpose(
@@ -63,24 +72,18 @@ def generator_forward(z, is_training, reuse=None, name="generator"):
             num_outputs=64,
             kernel_size=4,
             stride=2,
-            activation_fn=leaky_rectify,
-            normalizer_fn=identity
+            activation_fn=tf.nn.relu,
+            normalizer_fn=layers.batch_norm,
+            normalizer_params={"is_training": is_training, "updates_collections": None}
         )
         out = layers.convolution2d_transpose(
             out,
-            num_outputs=32,
+            num_outputs=1,
             kernel_size=4,
             stride=2,
-            activation_fn=leaky_rectify,
-            normalizer_fn=identity
+            activation_fn=tf.nn.relu
         )
-        out = layers.convolution2d(
-            out,
-            num_outputs=1,
-            kernel_size=1,
-            stride=1,
-            activation_fn=tf.nn.sigmoid
-        )
+        print(out.get_shape())
     return out
 
 def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
@@ -98,7 +101,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             num_outputs=128,
             kernel_size=4,
             stride=2,
-            normalizer_params={"is_training":is_training},
+            normalizer_params={"is_training":is_training, "updates_collections": None}
             normalizer_fn=layers.batch_norm,
             activation_fn=leaky_rectify,
             scope="my_conv2"
@@ -108,7 +111,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             out,
             num_outputs=1024,
             activation_fn=leaky_rectify,
-            normalizer_params={"is_training":is_training},
+            normalizer_params={"is_training":is_training, "updates_collections": None}
             normalizer_fn=layers.batch_norm,
             scope="my_fc1"
         )
@@ -116,7 +119,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             out,
             num_outputs=1,
             activation_fn=tf.nn.sigmoid,
-            normalizer_params={"is_training":is_training},
+            normalizer_params={"is_training":is_training, "updates_collections": None}
             normalizer_fn=layers.batch_norm,
             scope="my_fc2"
         )
@@ -328,7 +331,7 @@ def train():
                 noise = sample_noise(batch_size)
                 _, disc_obj, _, infogan_obj = sess.run(
                     [train_discriminator, discriminator_obj, train_mutual_info, nll_mutual_info],
-                    feed_dict={true_images:batch, z_vectors:noise, is_training_discriminator:True}
+                    feed_dict={true_images:batch, z_vectors:noise, is_training_discriminator:True, is_training_generator:False}
                 )
                 disc_epoch_obj += disc_obj
 
@@ -339,7 +342,7 @@ def train():
                 noise = sample_noise(batch_size)
                 _, gen_obj, _, infogan_obj = sess.run(
                     [train_generator, ll_believing_fake_images_are_real, train_mutual_info, nll_mutual_info],
-                    feed_dict={z_vectors:noise, is_training_discriminator:False}
+                    feed_dict={z_vectors:noise, is_training_discriminator:False, is_training_generator:True}
                 )
                 gen_epoch_obj += gen_obj
 
@@ -359,7 +362,8 @@ def train():
                                         style_size,
                                         batch_size
                                     ),
-                                    is_training_discriminator:False
+                                    is_training_discriminator:False,
+                                    is_training_generator:False
                                 }
                             )
                             journalist.add_summary(partial_summary)
