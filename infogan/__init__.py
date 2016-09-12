@@ -404,7 +404,7 @@ def train():
 
                 # train generator
                 noise = sample_noise(batch_size)
-                _, gen_obj, _, infogan_obj = sess.run(
+                _, gen_obj, infogan_obj = sess.run(
                     [train_generator, ll_believing_fake_images_are_real, nll_mutual_info],
                     feed_dict={z_vectors:noise, is_training_discriminator:False, is_training_generator:True}
                 )
