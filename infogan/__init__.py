@@ -6,7 +6,12 @@ import numpy as np
 
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
+
+import matplotlib
+matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
+
 
 from tensorflow.examples.tutorials.mnist import input_data
 
@@ -203,7 +208,7 @@ def reconstruct_mutual_info(true_categorical, true_continuous, hidden, is_traini
         prob_categorical = tf.nn.softmax(out[:, :num_categorical])
         ll_categorical = tf.reduce_sum(tf.log(prob_categorical + TINY) * true_categorical, reduction_indices=1)
 
-        mean_contig = tf.nn.tanh(out[:, num_categorical:num_categorical + num_continuous])
+        mean_contig = out[:, num_categorical:num_categorical + num_continuous]
         std_contig = tf.sqrt(tf.exp(out[:, num_categorical + num_continuous:num_categorical + num_continuous * 2]))
         epsilon = (true_continuous - mean_contig) / (std_contig + TINY)
         ll_contig = tf.reduce_sum(
