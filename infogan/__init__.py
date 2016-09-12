@@ -101,7 +101,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             num_outputs=128,
             kernel_size=4,
             stride=2,
-            normalizer_params={"is_training":is_training, "updates_collections": None}
+            normalizer_params={"is_training":is_training, "updates_collections": None},
             normalizer_fn=layers.batch_norm,
             activation_fn=leaky_rectify,
             scope="my_conv2"
@@ -111,7 +111,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             out,
             num_outputs=1024,
             activation_fn=leaky_rectify,
-            normalizer_params={"is_training":is_training, "updates_collections": None}
+            normalizer_params={"is_training":is_training, "updates_collections": None},
             normalizer_fn=layers.batch_norm,
             scope="my_fc1"
         )
@@ -119,7 +119,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             out,
             num_outputs=1,
             activation_fn=tf.nn.sigmoid,
-            normalizer_params={"is_training":is_training, "updates_collections": None}
+            normalizer_params={"is_training":is_training, "updates_collections": None},
             normalizer_fn=layers.batch_norm,
             scope="my_fc2"
         )
