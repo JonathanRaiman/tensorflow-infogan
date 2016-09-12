@@ -231,6 +231,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
+    parser.add_argument("--plot_every", type=int, default=200,
+                        help="How often should plots be made (note: slow + costly).")
     # control whether to train GAN or InfoGAN:
     parser.add_argument("--infogan", action="store_true", default=False)
     parser.add_argument("--noinfogan", action="store_false", dest="infogan")
@@ -314,6 +316,7 @@ def train():
     n_epochs = args.epochs
     use_batch_norm = args.use_batch_norm
     fix_std = args.fix_std
+    plot_every = args.plot_every
 
     use_infogan = args.infogan
 
@@ -477,7 +480,7 @@ def train():
 
                 iters += 1
 
-                if iters % 20 == 0:
+                if iters % plot_every == 0:
                     if use_infogan:
                         # for i in range(num_categorical):
                         #     partial_summary = sess.run(img_summaries[i], {
