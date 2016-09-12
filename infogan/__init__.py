@@ -185,7 +185,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator", us
     return {"prob":prob, "hidden":out}
 
 
-def reconstruct_mutual_info(true_categorical, true_continuous, hidden, is_training, reuse=None, name="mutual_info"):
+def reconstruct_mutual_info(true_categorical, true_continuous, fix_std, hidden, is_training, reuse=None, name="mutual_info"):
     with tf.variable_scope(name, reuse=reuse):
         out = layers.fully_connected(
             hidden,
@@ -200,7 +200,7 @@ def reconstruct_mutual_info(true_categorical, true_continuous, hidden, is_traini
 
         out = layers.fully_connected(
             out,
-            num_outputs=num_categorical + num_continuous * 2,
+            num_outputs=num_categorical + (num_continuous if fix_std else (num_continuous * 2)),
             activation_fn=tf.identity
         )
 
@@ -209,7 +209,12 @@ def reconstruct_mutual_info(true_categorical, true_continuous, hidden, is_traini
         ll_categorical = tf.reduce_sum(tf.log(prob_categorical + TINY) * true_categorical, reduction_indices=1)
 
         mean_contig = out[:, num_categorical:num_categorical + num_continuous]
-        std_contig = tf.sqrt(tf.exp(out[:, num_categorical + num_continuous:num_categorical + num_continuous * 2]))
+
+        if fix_std:
+            std_contig = tf.ones_like(mean_contig)
+        else:
+            std_contig = tf.sqrt(tf.exp(out[:, num_categorical + num_continuous:num_categorical + num_continuous * 2]))
+
         epsilon = (true_continuous - mean_contig) / (std_contig + TINY)
         ll_contig = tf.reduce_sum(
             - 0.5 * np.log(2 * np.pi) - tf.log(std_contig + TINY) - 0.5 * tf.square(epsilon),
@@ -232,6 +237,9 @@ def parse_args():
     # control whether to use Batch Norm:
     parser.add_argument("--use_batch_norm", action="store_true", default=True)
     parser.add_argument("--nouse_batch_norm", action="store_false", dest="use_batch_norm")
+    # control whether to learn a standard deviation for the style variables:
+    parser.add_argument("--fix_std", action="store_true", default=True)
+    parser.add_argument("--nofix_std", action="store_false", dest="fix_std")
     return parser.parse_args()
 
 
@@ -305,6 +313,7 @@ def train():
     batch_size = args.batch_size
     n_epochs = args.epochs
     use_batch_norm = args.use_batch_norm
+    fix_std = args.fix_std
 
     use_infogan = args.infogan
 
@@ -403,6 +412,7 @@ def train():
         ll_mutual_info = reconstruct_mutual_info(
             z_vectors[:, :num_categorical],
             z_vectors[:, num_categorical:num_categorical+num_continuous],
+            fix_std=fix_std,
             hidden=discriminator_fake["hidden"],
             is_training=is_training_discriminator,
             name="mutual_info"
