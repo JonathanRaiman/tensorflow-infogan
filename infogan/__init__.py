@@ -51,6 +51,7 @@ def leaky_rectify(x, leakiness=0.01):
     ret = tf.maximum(x, leakiness * x)
     return ret
 
+
 def load_dataset():
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
     pixel_height = 28
@@ -75,13 +76,14 @@ def create_progress_bar(message):
     pbar = progressbar.ProgressBar(widgets=widgets)
     return pbar
 
+
 def identity(x):
     return x
 
-def generator_forward(z, is_training, reuse=None, name="generator", use_batch_norm=True):
+
+def generator_forward(z, image_size, is_training, reuse=None, name="generator", use_batch_norm=True):
     with tf.variable_scope(name, reuse=reuse):
         z_shape = tf.shape(z)
-        image_size = 28
 
         if use_batch_norm:
             fc_batch_norm = layers.batch_norm
@@ -128,6 +130,7 @@ def generator_forward(z, is_training, reuse=None, name="generator", use_batch_no
         )
     return out
 
+
 def discriminator_forward(img, is_training, reuse=None, name="discriminator", use_batch_norm=True):
     with tf.variable_scope(name, reuse=reuse):
 
@@ -151,7 +154,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator", us
             num_outputs=128,
             kernel_size=4,
             stride=2,
-            normalizer_params={"is_training":is_training},
+            normalizer_params={"is_training": is_training},
             normalizer_fn=cnn_batch_norm,
             activation_fn=leaky_rectify,
             scope="my_conv2"
@@ -161,7 +164,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator", us
             out,
             num_outputs=1024,
             activation_fn=leaky_rectify,
-            normalizer_params={"is_training":is_training, "updates_collections": None},
+            normalizer_params={"is_training": is_training, "updates_collections": None},
             normalizer_fn=fc_batch_norm,
             scope="my_fc1"
         )
@@ -169,7 +172,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator", us
             out,
             num_outputs=1,
             activation_fn=tf.nn.sigmoid,
-            normalizer_params={"is_training":is_training, "updates_collections": None},
+            normalizer_params={"is_training": is_training, "updates_collections": None},
             normalizer_fn=fc_batch_norm,
             scope="my_fc2"
         )
@@ -225,17 +228,21 @@ def parse_args():
     parser.add_argument("--nouse_batch_norm", action="store_false", dest="use_batch_norm")
     return parser.parse_args()
 
+
 def variables_in_current_scope():
     return tf.get_collection(tf.GraphKeys.VARIABLES, scope=tf.get_variable_scope().name)
+
 
 def scope_variables(name):
     with tf.variable_scope(name):
         return variables_in_current_scope()
 
+
 def make_one_hot(indices, size):
     as_one_hot = np.zeros((indices.shape[0], size))
     as_one_hot[np.arange(0, indices.shape[0]), indices] = 1.0
     return as_one_hot
+
 
 def create_infogan_categorical_sample(category, num_categorical, num_continuous, style_size, batch_size):
     categorical = make_one_hot(
@@ -245,6 +252,7 @@ def create_infogan_categorical_sample(category, num_categorical, num_continuous,
     continuous = np.random.uniform(-1.0, 1.0, size=(batch_size, num_continuous))
     style = np.random.standard_normal(size=(batch_size, style_size))
     return np.hstack([categorical, continuous, style])
+
 
 def create_infogan_noise_sample(num_categorical, num_continuous, style_size):
     def sample(batch_size):
@@ -256,6 +264,7 @@ def create_infogan_noise_sample(num_categorical, num_continuous, style_size):
         style = np.random.standard_normal(size=(batch_size, style_size))
         return np.hstack([categorical, continuous, style])
     return sample
+
 
 def create_gan_noise_sample(style_size):
     def sample(batch_size):
@@ -273,7 +282,7 @@ def train():
 
     use_infogan = args.infogan
 
-    style_size = 7 * 7 * 2
+    style_size = 62
     num_categorical = 10
     num_continuous = 2
 
@@ -306,7 +315,12 @@ def train():
     is_training_discriminator = tf.placeholder(tf.bool, [])
     is_training_generator = tf.placeholder(tf.bool, [])
 
-    fake_images = generator_forward(z_vectors, is_training_generator, name="generator")
+    fake_images = generator_forward(
+        z_vectors,
+        image_size=pixel_height,
+        is_training=is_training_generator,
+        name="generator"
+    )
     discriminator_fake = discriminator_forward(
         fake_images,
         is_training_discriminator,
@@ -333,6 +347,7 @@ def train():
 
     # generator should maximize:
     ll_believing_fake_images_are_real = tf.reduce_mean(tf.log(prob_fake + TINY))
+    generator_obj = ll_believing_fake_images_are_real
 
     discriminator_solver = tf.train.AdamOptimizer(
         learning_rate=discriminator_lr,
@@ -345,8 +360,6 @@ def train():
 
     discriminator_variables = scope_variables("discriminator")
     generator_variables = scope_variables("generator")
-
-    train_generator = generator_solver.minimize(-ll_believing_fake_images_are_real, var_list=generator_variables)
 
     if use_infogan:
         img_summaries = {}
@@ -369,13 +382,18 @@ def train():
             name="mutual_info"
         )
         mutual_info_variables = scope_variables("mutual_info")
-        discriminator_obj = discriminator_obj + ll_mutual_info
-        discriminator_variables = discriminator_variables + mutual_info_variables
+        generator_obj = generator_obj
         nll_mutual_info = -ll_mutual_info
+        train_mutual_info = generator_solver.minimize(
+            nll_mutual_info,
+            var_list=generator_variables + discriminator_variables + mutual_info_variables
+        )
     else:
         nll_mutual_info = tf.noop
+        train_mutual_info = tf.noop
 
     train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
+    train_generator = generator_solver.minimize(-generator_obj, var_list=generator_variables)
 
     with tf.Session() as sess:
         # pleasure
@@ -395,7 +413,12 @@ def train():
                 noise = sample_noise(batch_size)
                 _, disc_obj, infogan_obj = sess.run(
                     [train_discriminator, discriminator_obj, nll_mutual_info],
-                    feed_dict={true_images:batch, z_vectors:noise, is_training_discriminator:True, is_training_generator:True}
+                    feed_dict={
+                        true_images:batch,
+                        z_vectors:noise,
+                        is_training_discriminator:True,
+                        is_training_generator:True
+                    }
                 )
                 disc_epoch_obj += disc_obj
 
@@ -404,9 +427,13 @@ def train():
 
                 # train generator
                 noise = sample_noise(batch_size)
-                _, gen_obj, infogan_obj = sess.run(
-                    [train_generator, ll_believing_fake_images_are_real, nll_mutual_info],
-                    feed_dict={z_vectors:noise, is_training_discriminator:False, is_training_generator:True}
+                _, _, gen_obj, infogan_obj = sess.run(
+                    [train_generator, train_mutual_info, generator_obj, nll_mutual_info],
+                    feed_dict={
+                        z_vectors:noise,
+                        is_training_discriminator:True,
+                        is_training_generator:True
+                    }
                 )
                 gen_epoch_obj += gen_obj
 
@@ -453,17 +480,6 @@ def train():
                         gen_epoch_obj / iters, sess.run(generator_lr)
                     )
                 )
-
-            # if disc_epoch_obj / iters > np.log(0.7):
-            #     sess.run(
-            #         assign_discriminator_lr_op,
-            #         {discriminator_lr_placeholder: sess.run(discriminator_lr) * 0.5}
-            #     )
-            # elif disc_epoch_obj / iters < np.log(0.4):
-            #     sess.run(
-            #         assign_discriminator_lr_op,
-            #         {discriminator_lr_placeholder: sess.run(discriminator_lr) * 2.0}
-            #     )
 
 
 if __name__ == "__main__":
