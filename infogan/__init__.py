@@ -17,8 +17,8 @@ def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True,
     shp = shape[-1]
 
     with tf.variable_scope(name) as scope:
-        gamma = tf.get_variable("gamma", [shp], init=tf.random_normal_initializer(1., 0.02), trainable=trainable)
-        beta = tf.get_variable("beta", [shp], init=tf.constant_initializer(0.), trainable=trainable)
+        gamma = tf.get_variable("gamma", [shp], initializer=tf.random_normal_initializer(1., 0.02), trainable=trainable)
+        beta = tf.get_variable("beta", [shp], initializer=tf.constant_initializer(0.), trainable=trainable)
 
         mean, variance = tf.nn.moments(inputs, [0, 1, 2])
         # sigh...tf's shape system is so..
