@@ -260,15 +260,22 @@ def make_one_hot(indices, size):
     return as_one_hot
 
 
-def create_infogan_categorical_sample(category, num_categorical, num_continuous, style_size, batch_size):
+def create_infogan_categorical_sample(category, num_categorical, num_continuous, style_size, batch_size, changing_continuous):
     categorical = make_one_hot(
         np.ones(batch_size, dtype=np.int32) * category,
         size=num_categorical
     )
     continuous = np.zeros((batch_size, num_continuous))
+    reference_random = np.random.uniform(-1.0, 1.0, size=(num_continuous))
     for i in range(num_continuous):
-        continuous[:, i] = np.linspace(-1.0, 1.0, batch_size)
-    style = np.random.standard_normal(size=(batch_size, style_size))
+        if i == changing_continuous:
+            continuous[:, i] = np.linspace(-1.0, 1.0, batch_size)
+        else:
+            continuous[:, i] = reference_random[i]
+    reference_style = np.random.standard_normal(size=(style_size))
+    style = np.zeros((batch_size, style_size))
+    for i in range(batch_size):
+        style[i,:] = reference_style
     return np.hstack([categorical, continuous, style])
 
 
@@ -302,7 +309,7 @@ def plot_grid(grid_data):
         for image_idx, image in enumerate(images[:n_images]):
             axes[c_idx, image_idx].imshow(
                 image.reshape(image.shape[0], image.shape[1]),
-                cmap=plt.cm.Greys
+                cmap=plt.cm.Greys_r
             )
     plt.setp(axes, xticks=[], yticks=[]);
     return fig
@@ -498,25 +505,27 @@ def train():
                         #     journalist.add_summary(partial_summary)
 
                         images_labels = []
-                        grid_width = 10
+                        grid_width = 7
 
                         for i in range(num_categorical):
-                            images_labels.append(
-                                sess.run(
-                                    fake_images,
-                                    {
-                                        z_vectors: create_infogan_categorical_sample(
-                                            i,
-                                            num_categorical,
-                                            num_continuous,
-                                            style_size,
-                                            grid_width
-                                        ),
-                                        is_training_discriminator:False,
-                                        is_training_generator:False
-                                    }
+                            for j in range(num_continuous):
+                                images_labels.append(
+                                    sess.run(
+                                        fake_images,
+                                        {
+                                            z_vectors: create_infogan_categorical_sample(
+                                                i,
+                                                num_categorical,
+                                                num_continuous,
+                                                style_size,
+                                                grid_width,
+                                                changing_continuous=j
+                                            ),
+                                            is_training_discriminator:False,
+                                            is_training_generator:False
+                                        }
+                                    )
                                 )
-                            )
                         fig = plot_grid(images_labels)
                         fig.savefig("plotted_images.png", dpi=300, bbox_inches="tight")
                         plt.close(fig)
