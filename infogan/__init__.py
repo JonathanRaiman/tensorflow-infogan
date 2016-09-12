@@ -11,6 +11,42 @@ from tensorflow.examples.tutorials.mnist import input_data
 
 TINY = 1e-6
 
+def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True, epsilon=1e-5):
+    ema = tf.train.ExponentialMovingAverage(decay=0.9)
+    shape = tf.shape(inputs)
+    shp = shape[-1]
+
+    with tf.variable_scope(name) as scope:
+        gamma = tf.get_variable("gamma", [shp], init=tf.random_normal_initializer(1., 0.02), trainable=trainable)
+        beta = tf.get_variable("beta", [shp], init=tf.constant_initializer(0.), trainable=trainable)
+
+        mean, variance = tf.nn.moments(inputs, [0, 1, 2])
+        # sigh...tf's shape system is so..
+        mean.set_shape((shp,))
+        variance.set_shape((shp,))
+        ema_apply_op = ema.apply([mean, variance])
+
+        def update():
+            with tf.control_dependencies([ema_apply_op]):
+                return tf.nn.batch_norm_with_global_normalization(
+                    inputs, mean, variance, beta, gamma, epsilon,
+                    scale_after_normalization=True
+                )
+        def do_not_update():
+            return tf.nn.batch_norm_with_global_normalization(
+                x, ema.average(mean), ema.average(variance), beta,
+                gamma, epsilon,
+                scale_after_normalization=True
+            )
+
+        normalized_x = tf.cond(
+            is_training,
+            update,
+            do_not_update
+        )
+        return normalized_x
+
+
 def leaky_rectify(x, leakiness=0.01):
     assert leakiness <= 1
     ret = tf.maximum(x, leakiness * x)
@@ -73,8 +109,8 @@ def generator_forward(z, is_training, reuse=None, name="generator"):
             kernel_size=4,
             stride=2,
             activation_fn=tf.nn.relu,
-            normalizer_fn=layers.batch_norm,
-            normalizer_params={"is_training": is_training, "updates_collections": None}
+            normalizer_fn=conv_batch_norm,
+            normalizer_params={"is_training": is_training}
         )
         out = layers.convolution2d_transpose(
             out,
@@ -83,7 +119,6 @@ def generator_forward(z, is_training, reuse=None, name="generator"):
             stride=2,
             activation_fn=tf.nn.relu
         )
-        print(out.get_shape())
     return out
 
 def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
@@ -101,8 +136,8 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator"):
             num_outputs=128,
             kernel_size=4,
             stride=2,
-            normalizer_params={"is_training":is_training, "updates_collections": None},
-            normalizer_fn=layers.batch_norm,
+            normalizer_params={"is_training":is_training},
+            normalizer_fn=conv_batch_norm,
             activation_fn=leaky_rectify,
             scope="my_conv2"
         )
