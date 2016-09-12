@@ -13,8 +13,7 @@ TINY = 1e-6
 
 def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True, epsilon=1e-5):
     ema = tf.train.ExponentialMovingAverage(decay=0.9)
-    shape = tf.shape(inputs)
-    shp = shape[-1]
+    shp = inputs.get_shape()[-1].value
 
     with tf.variable_scope(name) as scope:
         gamma = tf.get_variable("gamma", [shp], initializer=tf.random_normal_initializer(1., 0.02), trainable=trainable)
