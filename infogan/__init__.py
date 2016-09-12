@@ -288,9 +288,9 @@ def plot_grid(grid_data):
         len(grid_data), n_images
     )
 
-    for images in grid_data:
+    for c_idx, images in enumerate(grid_data):
         for image_idx, image in enumerate(images[:n_images]):
-            axes[key, image_idx].imshow(
+            axes[c_idx, image_idx].imshow(
                 image.reshape(image.shape[0], image.shape[1]),
                 cmap=plt.cm.Greys
             )
