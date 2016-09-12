@@ -217,8 +217,6 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
-    # Learning rate for rebuilding categorical / continuous variables
-    parser.add_argument("--mutual_info_lr", type=float, default=2e-4)
     # control whether to train GAN or InfoGAN:
     parser.add_argument("--infogan", action="store_true", default=False)
     parser.add_argument("--noinfogan", action="store_false", dest="infogan")
@@ -288,7 +286,6 @@ def train():
 
     discriminator_lr = tf.get_variable("discriminator_lr", (), initializer=tf.constant_initializer(args.discriminator_lr))
     generator_lr = tf.get_variable("generator_lr", (), initializer=tf.constant_initializer(args.generator_lr))
-    mutual_info_lr = tf.get_variable("mutual_info_lr", (), initializer=tf.constant_initializer(args.mutual_info_lr))
     pixel_height = 28
     pixel_width = 28
     n_channels = 1
@@ -350,7 +347,6 @@ def train():
     generator_variables = scope_variables("generator")
 
     train_generator = generator_solver.minimize(-ll_believing_fake_images_are_real, var_list=generator_variables)
-    train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
 
     if use_infogan:
         img_summaries = {}
@@ -363,10 +359,8 @@ def train():
     journalist = tf.train.SummaryWriter("MNIST_v1_log", flush_secs=10)
 
     iters = 0
-    noop = tf.no_op()
 
     if use_infogan:
-        mutual_info_solver = tf.train.AdamOptimizer(learning_rate=mutual_info_lr, beta1=0.5)
         ll_mutual_info = reconstruct_mutual_info(
             z_vectors[:, :num_categorical],
             z_vectors[:, num_categorical:num_categorical+num_continuous],
@@ -375,14 +369,10 @@ def train():
             name="mutual_info"
         )
         mutual_info_variables = scope_variables("mutual_info")
-        nll_mutual_info = -ll_mutual_info
-        train_mutual_info = mutual_info_solver.minimize(
-            nll_mutual_info,
-            var_list=generator_variables + mutual_info_variables + discriminator_variables
-        )
-    else:
-        nll_mutual_info = noop
-        train_mutual_info = noop
+        discriminator_obj = discriminator_obj + ll_mutual_info
+        discriminator_variables = discriminator_variables + mutual_info_variables
+
+    train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
 
     with tf.Session() as sess:
         # pleasure
@@ -401,7 +391,7 @@ def train():
                 # train discriminator
                 noise = sample_noise(batch_size)
                 _, disc_obj, _, infogan_obj = sess.run(
-                    [train_discriminator, discriminator_obj, train_mutual_info, nll_mutual_info],
+                    [train_discriminator, discriminator_obj, nll_mutual_info],
                     feed_dict={true_images:batch, z_vectors:noise, is_training_discriminator:True, is_training_generator:True}
                 )
                 disc_epoch_obj += disc_obj
@@ -412,7 +402,7 @@ def train():
                 # train generator
                 noise = sample_noise(batch_size)
                 _, gen_obj, _, infogan_obj = sess.run(
-                    [train_generator, ll_believing_fake_images_are_real, train_mutual_info, nll_mutual_info],
+                    [train_generator, ll_believing_fake_images_are_real, nll_mutual_info],
                     feed_dict={z_vectors:noise, is_training_discriminator:False, is_training_generator:True}
                 )
                 gen_epoch_obj += gen_obj
