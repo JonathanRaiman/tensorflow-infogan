@@ -386,16 +386,16 @@ def train():
                     )
                 )
 
-            if disc_epoch_obj / iters > np.log(0.7):
-                sess.run(
-                    assign_discriminator_lr_op,
-                    {discriminator_lr_placeholder: sess.run(discriminator_lr) * 0.5}
-                )
-            elif disc_epoch_obj / iters < np.log(0.4):
-                sess.run(
-                    assign_discriminator_lr_op,
-                    {discriminator_lr_placeholder: sess.run(discriminator_lr) * 2.0}
-                )
+            # if disc_epoch_obj / iters > np.log(0.7):
+            #     sess.run(
+            #         assign_discriminator_lr_op,
+            #         {discriminator_lr_placeholder: sess.run(discriminator_lr) * 0.5}
+            #     )
+            # elif disc_epoch_obj / iters < np.log(0.4):
+            #     sess.run(
+            #         assign_discriminator_lr_op,
+            #         {discriminator_lr_placeholder: sess.run(discriminator_lr) * 2.0}
+            #     )
 
 
 if __name__ == "__main__":
