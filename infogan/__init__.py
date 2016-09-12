@@ -33,7 +33,7 @@ def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True,
                 )
         def do_not_update():
             return tf.nn.batch_norm_with_global_normalization(
-                x, ema.average(mean), ema.average(variance), beta,
+                inputs, ema.average(mean), ema.average(variance), beta,
                 gamma, epsilon,
                 scale_after_normalization=True
             )
