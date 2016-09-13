@@ -1,6 +1,8 @@
 import argparse
 import time
 
+from os.path import exists
+
 import progressbar
 import numpy as np
 
@@ -222,13 +224,17 @@ def reconstruct_mutual_info(true_categorical, true_continuous, fix_std, hidden, 
             std_contig = tf.sqrt(tf.exp(out[:, num_categorical + num_continuous:num_categorical + num_continuous * 2]))
 
         epsilon = (true_continuous - mean_contig) / (std_contig + TINY)
-        ll_contig = tf.reduce_sum(
+        ll_continuous = tf.reduce_sum(
             - 0.5 * np.log(2 * np.pi) - tf.log(std_contig + TINY) - 0.5 * tf.square(epsilon),
             reduction_indices=1,
         )
-
-        prob = ll_categorical + ll_contig
-    return tf.reduce_mean(prob)
+        prob = ll_categorical + ll_continuous
+    return {
+        "prob": tf.reduce_mean(prob),
+        "ll_categorical": tf.reduce_mean(ll_categorical),
+        "ll_continuous": tf.reduce_mean(ll_continuous),
+        "std_contig": tf.reduce_mean(std_contig)
+    }
 
 
 def parse_args():
@@ -249,6 +255,14 @@ def parse_args():
     parser.add_argument("--fix_std", action="store_true", default=True)
     parser.add_argument("--nofix_std", action="store_false", dest="fix_std")
     return parser.parse_args()
+
+
+def next_unused_name(name):
+    save_name = name
+    name_iteration = 0
+    while exists(save_name):
+        save_name = name + "-" + str(name_iteration)
+    return save_name
 
 
 def variables_in_current_scope():
@@ -428,20 +442,12 @@ def train():
     discriminator_variables = scope_variables("discriminator")
     generator_variables = scope_variables("generator")
 
-    if use_infogan:
-        img_summaries = {}
-        for i in range(num_categorical):
-            img_summaries[i] = tf.image_summary("image with c=%d" % (i,), fake_images, max_images=3)
-
-    else:
-        tf.image_summary("fake images", fake_images, max_images=10)
-    summary_op = tf.merge_all_summaries()
-    journalist = tf.train.SummaryWriter("MNIST_v1_log", flush_secs=10)
-
-    iters = 0
+    img_summaries = {}
+    if not use_infogan:
+        img_summaries["fake_images"] = tf.image_summary("fake images", fake_images, max_images=10)
 
     if use_infogan:
-        ll_mutual_info = reconstruct_mutual_info(
+        q_output = reconstruct_mutual_info(
             z_vectors[:, :num_categorical],
             z_vectors[:, num_categorical:num_categorical+num_continuous],
             fix_std=fix_std,
@@ -449,19 +455,52 @@ def train():
             is_training=is_training_discriminator,
             name="mutual_info"
         )
+        ll_mutual_info = q_output["prob"]
+
         mutual_info_variables = scope_variables("mutual_info")
         nll_mutual_info = -ll_mutual_info
         train_mutual_info = generator_solver.minimize(
             nll_mutual_info,
             var_list=generator_variables + discriminator_variables + mutual_info_variables
         )
+        ll_categorical = q_output["ll_categorical"]
+        ll_continuous = q_output["ll_continuous"]
+        std_contig = q_output["std_contig"]
     else:
         nll_mutual_info = NOOP
         train_mutual_info = NOOP
+        ll_categorical = NOOP
+        ll_continuous = NOOP
+        std_contig = NOOP
 
     train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
     train_generator = generator_solver.minimize(-generator_obj, var_list=generator_variables)
 
+    discriminator_obj_summary = tf.scalar_summary("discriminator_objective", discriminator_obj)
+    generator_obj_summary = tf.scalar_summary("generator_objective", generator_obj)
+    if use_infogan:
+        mutual_info_obj_summary = tf.scalar_summary("mutual_info_objective", nll_mutual_info)
+        ll_categorical_obj_summary = tf.scalar_summary("ll_categorical_objective", ll_categorical)
+        ll_continuous_obj_summary = tf.scalar_summary("ll_continuous_objective", ll_continuous)
+        std_contig_summary = tf.scalar_summary("std_contig", std_contig)
+        generator_obj_summary = tf.merge_summary([
+            generator_obj_summary,
+            mutual_info_obj_summary,
+            ll_categorical_obj_summary,
+            ll_continuous_obj_summary,
+            std_contig_summary
+        ])
+
+    image_summary_op = tf.merge_summary(list(img_summaries.values())) if len(img_summaries) else NOOP
+
+    log_dir = next_unused_name("MNIST_v1_log/%s" % ("infogan" if use_infogan else "gan"))
+    journalist = tf.train.SummaryWriter(
+        log_dir,
+        flush_secs=10
+    )
+    print("Saving tensorboard logs to %r" % (log_dir,))
+
+    iters = 0
     with tf.Session() as sess:
         # pleasure
         sess.run(tf.initialize_all_variables())
@@ -478,8 +517,8 @@ def train():
                 batch = X[idxes[idx:idx + batch_size]]
                 # train discriminator
                 noise = sample_noise(batch_size)
-                _, disc_obj, infogan_obj = sess.run(
-                    [train_discriminator, discriminator_obj, nll_mutual_info],
+                _, summary_result1, disc_obj, infogan_obj = sess.run(
+                    [train_discriminator, discriminator_obj_summary, discriminator_obj, nll_mutual_info],
                     feed_dict={
                         true_images:batch,
                         z_vectors:noise,
@@ -487,6 +526,7 @@ def train():
                         is_training_generator:True
                     }
                 )
+
                 disc_epoch_obj += disc_obj
 
                 if use_infogan:
@@ -494,14 +534,18 @@ def train():
 
                 # train generator
                 noise = sample_noise(batch_size)
-                _, _, gen_obj, infogan_obj = sess.run(
-                    [train_generator, train_mutual_info, generator_obj, nll_mutual_info],
+                _, _, summary_result2, gen_obj, infogan_obj = sess.run(
+                    [train_generator, train_mutual_info, generator_obj_summary, generator_obj, nll_mutual_info],
                     feed_dict={
                         z_vectors:noise,
                         is_training_discriminator:True,
                         is_training_generator:True
                     }
                 )
+
+                journalist.add_summary(summary_result1, iters)
+                journalist.add_summary(summary_result2, iters)
+                journalist.flush()
                 gen_epoch_obj += gen_obj
 
                 if use_infogan:
@@ -511,21 +555,6 @@ def train():
 
                 if iters % plot_every == 0:
                     if use_infogan:
-                        # for i in range(num_categorical):
-                        #     partial_summary = sess.run(img_summaries[i], {
-                        #             z_vectors: create_infogan_categorical_sample(
-                        #                 i,
-                        #                 num_categorical,
-                        #                 num_continuous,
-                        #                 style_size,
-                        #                 batch_size
-                        #             ),
-                        #             is_training_discriminator:False,
-                        #             is_training_generator:False
-                        #         }
-                        #     )
-                        #     journalist.add_summary(partial_summary)
-
                         images_labels = []
                         grid_width = 7
 
@@ -554,14 +583,14 @@ def train():
                     else:
                         noise = sample_noise(batch_size)
                         current_summary = sess.run(
-                            summary_op,
+                            image_summary_op,
                             {
                                 z_vectors:noise,
                                 is_training_discriminator:False,
                                 is_training_generator:False
                             }
                         )
-                        journalist.add_summary(current_summary)
+                        journalist.add_summary(current_summary, iters)
                     journalist.flush()
 
 
