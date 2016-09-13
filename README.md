@@ -44,15 +44,6 @@ You should now see images like these show up:
 ![fake number](sample_images/gan/individualImage-8.png)
 ![fake number](sample_images/gan/individualImage-9.png)
 ![fake number](sample_images/gan/individualImage-10.png)
-![fake number](sample_images/gan/individualImage-11.png)
-![fake number](sample_images/gan/individualImage-12.png)
-![fake number](sample_images/gan/individualImage-13.png)
-![fake number](sample_images/gan/individualImage-14.png)
-![fake number](sample_images/gan/individualImage-15.png)
-![fake number](sample_images/gan/individualImage-16.png)
-![fake number](sample_images/gan/individualImage-17.png)
-![fake number](sample_images/gan/individualImage-18.png)
-![fake number](sample_images/gan/individualImage-19.png)
 
 ### InfoGAN
 
