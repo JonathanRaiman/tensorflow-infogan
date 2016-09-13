@@ -9,7 +9,7 @@ from .categorical_grid_plots import CategoricalPlotter
 from tensorflow.examples.tutorials.mnist import input_data
 from infogan.tf_utils import (
     scope_variables, NOOP, leaky_rectify, identity,
-    conv_batch_norm
+    conv_batch_norm, load_mnist_dataset
 )
 from infogan.misc_utils import (
     next_unused_name,
@@ -22,16 +22,6 @@ from infogan.noise_utils import (
 )
 
 TINY = 1e-6
-
-def load_dataset():
-    mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
-    pixel_height = 28
-    pixel_width = 28
-    n_channels = 1
-    for dset in [mnist.train, mnist.validation, mnist.test]:
-        num_images = len(dset.images)
-        dset.images.shape = (num_images, pixel_height, pixel_width, n_channels)
-    return mnist
 
 
 def generator_forward(z, image_size, is_training, reuse=None, name="generator", use_batch_norm=True):
@@ -186,6 +176,10 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
+    parser.add_argument("--num_categorical", type=int, default=10)
+    parser.add_argument("--num_continuous", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--style_size", type=int, default=62)
     parser.add_argument("--plot_every", type=int, default=200,
                         help="How often should plots be made (note: slow + costly).")
     add_boolean_cli_arg("infogan", default=True, help="control whether to train GAN or InfoGAN")
@@ -196,20 +190,20 @@ def parse_args():
 
 def train():
     args = parse_args()
-    np.random.seed(1234)
-    mnist = load_dataset()
+
+    np.random.seed(args.seed)
+    mnist = load_mnist_dataset()
+
     batch_size = args.batch_size
     n_epochs = args.epochs
     use_batch_norm = args.use_batch_norm
     fix_std = args.fix_std
     plot_every = args.plot_every
     use_entropy_obj = args.entropy_penalty
-
     use_infogan = args.infogan
-
-    style_size = 62
-    num_categorical = 10
-    num_continuous = 2
+    style_size = args.style_size
+    num_categorical = args.num_categorical
+    num_continuous = args.num_continuous
 
     if use_infogan:
         z_size = style_size + num_categorical + num_continuous
@@ -238,7 +232,6 @@ def train():
     idxes = np.arange(n_images, dtype=np.int32)
 
     ## begin model
-
     true_images = tf.placeholder(
         tf.float32,
         [None, pixel_height, pixel_width, n_channels],

@@ -57,6 +57,18 @@ def conv_batch_norm(inputs,
         )
         return normalized_x
 
+
+def load_mnist_dataset():
+    mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
+    pixel_height = 28
+    pixel_width = 28
+    n_channels = 1
+    for dset in [mnist.train, mnist.validation, mnist.test]:
+        num_images = len(dset.images)
+        dset.images.shape = (num_images, pixel_height, pixel_width, n_channels)
+    return mnist
+
+
 try:
     NOOP = tf.noop
 except:
