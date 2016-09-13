@@ -1,6 +1,5 @@
 import argparse
 
-import progressbar
 import numpy as np
 
 import tensorflow as tf
@@ -8,49 +7,21 @@ import tensorflow.contrib.layers as layers
 
 from .categorical_grid_plots import CategoricalPlotter
 from tensorflow.examples.tutorials.mnist import input_data
-from infogan.tf_utils import scope_variables, NOOP, leaky_rectify, identity
-from infogan.io_utils import next_unused_name
+from infogan.tf_utils import (
+    scope_variables, NOOP, leaky_rectify, identity,
+    conv_batch_norm
+)
+from infogan.misc_utils import (
+    next_unused_name,
+    add_boolean_cli_arg,
+    create_progress_bar
+)
 from infogan.noise_utils import (
     create_infogan_noise_sample,
     create_gan_noise_sample
 )
 
 TINY = 1e-6
-
-def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True, epsilon=1e-5):
-    ema = tf.train.ExponentialMovingAverage(decay=0.9)
-    shp = inputs.get_shape()[-1].value
-
-    with tf.variable_scope(name) as scope:
-        gamma = tf.get_variable("gamma", [shp], initializer=tf.random_normal_initializer(1., 0.02), trainable=trainable)
-        beta = tf.get_variable("beta", [shp], initializer=tf.constant_initializer(0.), trainable=trainable)
-
-        mean, variance = tf.nn.moments(inputs, [0, 1, 2])
-        # sigh...tf's shape system is so..
-        mean.set_shape((shp,))
-        variance.set_shape((shp,))
-        ema_apply_op = ema.apply([mean, variance])
-
-        def update():
-            with tf.control_dependencies([ema_apply_op]):
-                return tf.nn.batch_norm_with_global_normalization(
-                    inputs, mean, variance, beta, gamma, epsilon,
-                    scale_after_normalization=True
-                )
-        def do_not_update():
-            return tf.nn.batch_norm_with_global_normalization(
-                inputs, ema.average(mean), ema.average(variance), beta,
-                gamma, epsilon,
-                scale_after_normalization=True
-            )
-
-        normalized_x = tf.cond(
-            is_training,
-            update,
-            do_not_update
-        )
-        return normalized_x
-
 
 def load_dataset():
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
@@ -61,20 +32,6 @@ def load_dataset():
         num_images = len(dset.images)
         dset.images.shape = (num_images, pixel_height, pixel_width, n_channels)
     return mnist
-
-
-def create_progress_bar(message):
-    widgets = [
-        message,
-        progressbar.Counter(),
-        ' ',
-        progressbar.Percentage(),
-        ' ',
-        progressbar.Bar(),
-        progressbar.AdaptiveETA()
-    ]
-    pbar = progressbar.ProgressBar(widgets=widgets)
-    return pbar
 
 
 def generator_forward(z, image_size, is_training, reuse=None, name="generator", use_batch_norm=True):
@@ -173,7 +130,13 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator", us
     return {"prob":prob, "hidden":out}
 
 
-def reconstruct_mutual_info(true_categorical, true_continuous, fix_std, hidden, is_training, reuse=None, name="mutual_info"):
+def reconstruct_mutual_info(true_categorical,
+                            true_continuous,
+                            fix_std,
+                            hidden,
+                            is_training,
+                            reuse=None,
+                            name="mutual_info"):
     with tf.variable_scope(name, reuse=reuse):
         out = layers.fully_connected(
             hidden,
@@ -208,9 +171,9 @@ def reconstruct_mutual_info(true_categorical, true_continuous, fix_std, hidden, 
             - 0.5 * np.log(2 * np.pi) - tf.log(std_contig + TINY) - 0.5 * tf.square(epsilon),
             reduction_indices=1,
         )
-        prob = ll_categorical + ll_continuous
+        mutual_info_lb = ll_categorical + ll_continuous
     return {
-        "prob": tf.reduce_mean(prob),
+        "mutual_info": tf.reduce_mean(mutual_info_lb),
         "ll_categorical": tf.reduce_mean(ll_categorical),
         "ll_continuous": tf.reduce_mean(ll_continuous),
         "std_contig": tf.reduce_mean(std_contig)
@@ -225,15 +188,9 @@ def parse_args():
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
     parser.add_argument("--plot_every", type=int, default=200,
                         help="How often should plots be made (note: slow + costly).")
-    # control whether to train GAN or InfoGAN:
-    parser.add_argument("--infogan", action="store_true", default=False)
-    parser.add_argument("--noinfogan", action="store_false", dest="infogan")
-    # control whether to use Batch Norm:
-    parser.add_argument("--use_batch_norm", action="store_true", default=True)
-    parser.add_argument("--nouse_batch_norm", action="store_false", dest="use_batch_norm")
-    # control whether to learn a standard deviation for the style variables:
-    parser.add_argument("--fix_std", action="store_true", default=True)
-    parser.add_argument("--nofix_std", action="store_false", dest="fix_std")
+    add_boolean_cli_arg("infogan", default=True, help="control whether to train GAN or InfoGAN")
+    add_boolean_cli_arg("use_batch_norm", default=True, help="Use batch normalization (convergence++).")
+    add_boolean_cli_arg("fix_std", default=True, help="fix the standard deviation of continuous variables to 1.")
     return parser.parse_args()
 
 
@@ -246,6 +203,7 @@ def train():
     use_batch_norm = args.use_batch_norm
     fix_std = args.fix_std
     plot_every = args.plot_every
+    use_entropy_obj = args.entropy_penalty
 
     use_infogan = args.infogan
 
@@ -353,27 +311,28 @@ def train():
             z_vectors[:, :num_categorical],
             z_vectors[:, num_categorical:num_categorical+num_continuous],
             fix_std=fix_std,
+            use_entropy_obj=use_entropy_obj,
             hidden=discriminator_fake["hidden"],
             is_training=is_training_discriminator,
             name="mutual_info"
         )
-        ll_mutual_info = q_output["prob"]
-
+        mutual_info_objective = q_output["mutual_info"]
         mutual_info_variables = scope_variables("mutual_info")
-        nll_mutual_info = -ll_mutual_info
         train_mutual_info = generator_solver.minimize(
-            nll_mutual_info,
+            -mutual_info_objective,
             var_list=generator_variables + discriminator_variables + mutual_info_variables
         )
         ll_categorical = q_output["ll_categorical"]
         ll_continuous = q_output["ll_continuous"]
         std_contig = q_output["std_contig"]
+        entropy = q_output["entropy"]
     else:
-        nll_mutual_info = NOOP
+        mutual_info_objective = NOOP
         train_mutual_info = NOOP
         ll_categorical = NOOP
         ll_continuous = NOOP
         std_contig = NOOP
+        entropy = NOOP
 
     train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
     train_generator = generator_solver.minimize(-generator_obj, var_list=generator_variables)
@@ -381,7 +340,7 @@ def train():
     discriminator_obj_summary = tf.scalar_summary("discriminator_objective", discriminator_obj)
     generator_obj_summary = tf.scalar_summary("generator_objective", generator_obj)
     if use_infogan:
-        mutual_info_obj_summary = tf.scalar_summary("mutual_info_objective", nll_mutual_info)
+        mutual_info_obj_summary = tf.scalar_summary("mutual_info_objective", mutual_info_objective)
         ll_categorical_obj_summary = tf.scalar_summary("ll_categorical_objective", ll_categorical)
         ll_continuous_obj_summary = tf.scalar_summary("ll_continuous_objective", ll_continuous)
         std_contig_summary = tf.scalar_summary("std_contig", std_contig)
