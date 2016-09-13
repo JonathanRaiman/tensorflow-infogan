@@ -56,64 +56,7 @@ You should now see images like these show up:
 
 ### InfoGAN
 
-With category 0 active (squiggly snake pretzel):
+On tensorboard you should see the following properties emerge:
 
-![fake number](sample_images/infogan/class_0/individualImage.png)
-![fake number](sample_images/infogan/class_0/individualImage-1.png)
-![fake number](sample_images/infogan/class_0/individualImage-2.png)
-
-With category 1 active (V or 4):
-
-![fake number](sample_images/infogan/class_1/individualImage.png)
-![fake number](sample_images/infogan/class_1/individualImage-1.png)
-![fake number](sample_images/infogan/class_1/individualImage-2.png)
-
-With category 2 active (3 or 1):
-
-![fake number](sample_images/infogan/class_2/individualImage.png)
-![fake number](sample_images/infogan/class_2/individualImage-1.png)
-![fake number](sample_images/infogan/class_2/individualImage-2.png)
-
-With category 3 active (unknown or 7s):
-
-![fake number](sample_images/infogan/class_3/individualImage.png)
-![fake number](sample_images/infogan/class_3/individualImage-1.png)
-![fake number](sample_images/infogan/class_3/individualImage-2.png)
-
-With category 4 active (Candy cane):
-
-![fake number](sample_images/infogan/class_4/individualImage.png)
-![fake number](sample_images/infogan/class_4/individualImage-1.png)
-![fake number](sample_images/infogan/class_4/individualImage-2.png)
-
-With category 5 active (Cantilevered snake):
-
-![fake number](sample_images/infogan/class_5/individualImage.png)
-![fake number](sample_images/infogan/class_5/individualImage-1.png)
-![fake number](sample_images/infogan/class_5/individualImage-2.png)
-
-With category 6 active (7 with bubbles):
-
-![fake number](sample_images/infogan/class_6/individualImage.png)
-![fake number](sample_images/infogan/class_6/individualImage-1.png)
-![fake number](sample_images/infogan/class_6/individualImage-2.png)
-
-With category 7 active (hopping H):
-
-![fake number](sample_images/infogan/class_7/individualImage.png)
-![fake number](sample_images/infogan/class_7/individualImage-1.png)
-![fake number](sample_images/infogan/class_7/individualImage-2.png)
-
-With category 8 active (lasso 7):
-
-![fake number](sample_images/infogan/class_8/individualImage.png)
-![fake number](sample_images/infogan/class_8/individualImage-1.png)
-![fake number](sample_images/infogan/class_8/individualImage-2.png)
-
-With category 9 active (C / Tetris piece):
-
-![fake number](sample_images/infogan/class_9/individualImage.png)
-![fake number](sample_images/infogan/class_9/individualImage-1.png)
-![fake number](sample_images/infogan/class_9/individualImage-2.png)
-
+![variations](sample_images/infogan/variations.png)
 
