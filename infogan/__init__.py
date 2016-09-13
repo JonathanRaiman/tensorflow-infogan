@@ -1,7 +1,4 @@
 import argparse
-import time
-
-from os.path import exists
 
 import progressbar
 import numpy as np
@@ -9,21 +6,16 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
 
-import matplotlib
-matplotlib.use('Agg')
-
-import matplotlib.pyplot as plt
-
-
+from .categorical_grid_plots import CategoricalPlotter
 from tensorflow.examples.tutorials.mnist import input_data
+from infogan.tf_utils import scope_variables, NOOP, leaky_rectify, identity
+from infogan.io_utils import next_unused_name
+from infogan.noise_utils import (
+    create_infogan_noise_sample,
+    create_gan_noise_sample
+)
 
 TINY = 1e-6
-
-try:
-    NOOP = tf.noop
-except:
-    # this changed for no reason in latest version. Danke!
-    NOOP = tf.no_op()
 
 def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True, epsilon=1e-5):
     ema = tf.train.ExponentialMovingAverage(decay=0.9)
@@ -60,12 +52,6 @@ def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True,
         return normalized_x
 
 
-def leaky_rectify(x, leakiness=0.01):
-    assert leakiness <= 1
-    ret = tf.maximum(x, leakiness * x)
-    return ret
-
-
 def load_dataset():
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
     pixel_height = 28
@@ -89,10 +75,6 @@ def create_progress_bar(message):
     ]
     pbar = progressbar.ProgressBar(widgets=widgets)
     return pbar
-
-
-def identity(x):
-    return x
 
 
 def generator_forward(z, image_size, is_training, reuse=None, name="generator", use_batch_norm=True):
@@ -186,8 +168,6 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator", us
             out,
             num_outputs=1,
             activation_fn=tf.nn.sigmoid,
-            normalizer_params={"is_training": is_training, "updates_collections": None},
-            normalizer_fn=fc_batch_norm,
             scope="my_fc2"
         )
     return {"prob":prob, "hidden":out}
@@ -257,84 +237,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def next_unused_name(name):
-    save_name = name
-    name_iteration = 0
-    while exists(save_name):
-        save_name = name + "-" + str(name_iteration)
-    return save_name
-
-
-def variables_in_current_scope():
-    return tf.get_collection(tf.GraphKeys.VARIABLES, scope=tf.get_variable_scope().name)
-
-
-def scope_variables(name):
-    with tf.variable_scope(name):
-        return variables_in_current_scope()
-
-
-def make_one_hot(indices, size):
-    as_one_hot = np.zeros((indices.shape[0], size))
-    as_one_hot[np.arange(0, indices.shape[0]), indices] = 1.0
-    return as_one_hot
-
-
-def create_infogan_categorical_sample(category, num_categorical, num_continuous, style_size, batch_size, changing_continuous):
-    categorical = make_one_hot(
-        np.ones(batch_size, dtype=np.int32) * category,
-        size=num_categorical
-    )
-    continuous = np.zeros((batch_size, num_continuous))
-    reference_random = np.random.uniform(-1.0, 1.0, size=(num_continuous))
-    for i in range(num_continuous):
-        if i == changing_continuous:
-            continuous[:, i] = np.linspace(-1.0, 1.0, batch_size)
-        else:
-            continuous[:, i] = reference_random[i]
-    reference_style = np.random.standard_normal(size=(style_size))
-    style = np.zeros((batch_size, style_size))
-    for i in range(batch_size):
-        style[i,:] = reference_style
-    return np.hstack([categorical, continuous, style])
-
-
-def create_infogan_noise_sample(num_categorical, num_continuous, style_size):
-    def sample(batch_size):
-        categorical = make_one_hot(
-            np.random.randint(0, num_categorical, size=(batch_size,)),
-            size=num_categorical
-        )
-        continuous = np.random.uniform(-1.0, 1.0, size=(batch_size, num_continuous))
-        style = np.random.standard_normal(size=(batch_size, style_size))
-        return np.hstack([categorical, continuous, style])
-    return sample
-
-
-def create_gan_noise_sample(style_size):
-    def sample(batch_size):
-        return np.random.standard_normal(size=(batch_size, style_size))
-    return sample
-
-
-def plot_grid(grid_data):
-    if len(grid_data) == 0:
-        return None
-    n_images = min([len(v) for v in grid_data])
-    fig, axes = plt.subplots(
-        len(grid_data), n_images
-    )
-
-    for c_idx, images in enumerate(grid_data):
-        for image_idx, image in enumerate(images[:n_images]):
-            axes[c_idx, image_idx].imshow(
-                image.reshape(image.shape[0], image.shape[1]),
-                cmap=plt.cm.Greys_r
-            )
-    plt.setp(axes, xticks=[], yticks=[]);
-    return fig
-
-
 def train():
     args = parse_args()
     np.random.seed(1234)
@@ -353,7 +255,11 @@ def train():
 
     if use_infogan:
         z_size = style_size + num_categorical + num_continuous
-        sample_noise = create_infogan_noise_sample(num_categorical, num_continuous, style_size)
+        sample_noise = create_infogan_noise_sample(
+            num_categorical,
+            num_continuous,
+            style_size
+        )
     else:
         z_size = style_size
         sample_noise = create_gan_noise_sample(style_size)
@@ -442,10 +348,6 @@ def train():
     discriminator_variables = scope_variables("discriminator")
     generator_variables = scope_variables("generator")
 
-    img_summaries = {}
-    if not use_infogan:
-        img_summaries["fake_images"] = tf.image_summary("fake images", fake_images, max_images=10)
-
     if use_infogan:
         q_output = reconstruct_mutual_info(
             z_vectors[:, :num_categorical],
@@ -491,14 +393,30 @@ def train():
             std_contig_summary
         ])
 
-    image_summary_op = tf.merge_summary(list(img_summaries.values())) if len(img_summaries) else NOOP
-
     log_dir = next_unused_name("MNIST_v1_log/%s" % ("infogan" if use_infogan else "gan"))
     journalist = tf.train.SummaryWriter(
         log_dir,
         flush_secs=10
     )
     print("Saving tensorboard logs to %r" % (log_dir,))
+
+    img_summaries = {}
+    if use_infogan:
+        plotter = CategoricalPlotter(
+            num_categorical=num_categorical,
+            num_continuous=num_continuous,
+            style_size=style_size,
+            journalist=journalist,
+            generate=lambda sess, x: sess.run(
+                fake_images,
+                {z_vectors:x, is_training_discriminator:False, is_training_generator:False}
+            )
+        )
+    else:
+        image_placeholder = None
+        plotter = None
+        img_summaries["fake_images"] = tf.image_summary("fake images", fake_images, max_images=10)
+    image_summary_op = tf.merge_summary(list(img_summaries.values())) if len(img_summaries) else NOOP
 
     iters = 0
     with tf.Session() as sess:
@@ -555,31 +473,7 @@ def train():
 
                 if iters % plot_every == 0:
                     if use_infogan:
-                        images_labels = []
-                        grid_width = 7
-
-                        for i in range(num_categorical):
-                            for j in range(num_continuous):
-                                images_labels.append(
-                                    sess.run(
-                                        fake_images,
-                                        {
-                                            z_vectors: create_infogan_categorical_sample(
-                                                i,
-                                                num_categorical,
-                                                num_continuous,
-                                                style_size,
-                                                grid_width,
-                                                changing_continuous=j
-                                            ),
-                                            is_training_discriminator:False,
-                                            is_training_generator:False
-                                        }
-                                    )
-                                )
-                        fig = plot_grid(images_labels)
-                        fig.savefig("plotted_images.png", dpi=300, bbox_inches="tight")
-                        plt.close(fig)
+                        plotter.generate_images(sess, 10)
                     else:
                         noise = sample_noise(batch_size)
                         current_summary = sess.run(
@@ -609,7 +503,3 @@ def train():
                         gen_epoch_obj / iters, sess.run(generator_lr)
                     )
                 )
-
-
-if __name__ == "__main__":
-    train()
