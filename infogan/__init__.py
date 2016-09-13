@@ -376,9 +376,9 @@ def train():
         sess.run(tf.initialize_all_variables())
         # content
         for epoch in range(n_epochs):
-            disc_epoch_obj = 0.0
-            gen_epoch_obj = 0.0
-            infogan_epoch_obj = 0.0
+            disc_epoch_obj = []
+            gen_epoch_obj = []
+            infogan_epoch_obj = []
 
             np.random.shuffle(idxes)
             pbar = create_progress_bar("epoch %d >> " % (epoch,))
@@ -397,10 +397,10 @@ def train():
                     }
                 )
 
-                disc_epoch_obj += disc_obj
+                disc_epoch_obj.append(disc_obj)
 
                 if use_infogan:
-                    infogan_epoch_obj += infogan_obj
+                    infogan_epoch_obj.append(infogan_obj)
 
                 # train generator
                 noise = sample_noise(batch_size)
@@ -416,10 +416,10 @@ def train():
                 journalist.add_summary(summary_result1, iters)
                 journalist.add_summary(summary_result2, iters)
                 journalist.flush()
-                gen_epoch_obj += gen_obj
+                gen_epoch_obj.append(gen_obj)
 
                 if use_infogan:
-                    infogan_epoch_obj += infogan_obj
+                    infogan_epoch_obj.append(infogan_obj)
 
                 iters += 1
 
@@ -439,19 +439,11 @@ def train():
                         journalist.add_summary(current_summary, iters)
                     journalist.flush()
 
-
+            msg = "epoch %d >> discriminator LL %.2f (lr=%.6f), generator LL %.2f (lr=%.6f)" % (
+                epoch,
+                np.mean(disc_epoch_obj), sess.run(discriminator_lr),
+                np.mean(gen_epoch_obj), sess.run(generator_lr)
+            )
             if use_infogan:
-                print("epoch %d >> discriminator LL %.2f (lr=%.6f), generator LL %.2f (lr=%.6f), infogan loss %.2f" % (
-                        epoch,
-                        disc_epoch_obj / iters, sess.run(discriminator_lr),
-                        gen_epoch_obj / iters, sess.run(generator_lr),
-                        infogan_epoch_obj / (iters * 2)
-                    )
-                )
-            else:
-                print("epoch %d >> discriminator LL %.2f (lr=%.6f), generator LL %.2f (lr=%.6f)" % (
-                        epoch,
-                        disc_epoch_obj / iters, sess.run(discriminator_lr),
-                        gen_epoch_obj / iters, sess.run(generator_lr)
-                    )
-                )
+                msg = msg + ", infogan loss %.2f" % (np.mean(infogan_epoch_obj),)
+            print(msg)
