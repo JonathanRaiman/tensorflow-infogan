@@ -17,6 +17,12 @@ from tensorflow.examples.tutorials.mnist import input_data
 
 TINY = 1e-6
 
+try:
+    NOOP = tf.noop
+except:
+    # this changed for no reason in latest version. Danke!
+    NOOP = tf.no_op()
+
 def conv_batch_norm(inputs, name="batch_norm", is_training=True, trainable=True, epsilon=1e-5):
     ema = tf.train.ExponentialMovingAverage(decay=0.9)
     shp = inputs.get_shape()[-1].value
@@ -344,8 +350,8 @@ def train():
     pixel_width = 28
     n_channels = 1
 
-    discriminator_lr_placeholder = tf.placeholder(tf.float32, ())
-    generator_lr_placeholder = tf.placeholder(tf.float32, ())
+    discriminator_lr_placeholder = tf.placeholder(tf.float32, (), name="discriminator_lr")
+    generator_lr_placeholder = tf.placeholder(tf.float32, (), name="generator_lr")
     assign_discriminator_lr_op = discriminator_lr.assign(discriminator_lr_placeholder)
     assign_generator_lr_op = generator_lr.assign(generator_lr_placeholder)
 
@@ -355,10 +361,26 @@ def train():
 
     ## begin model
 
-    true_images = tf.placeholder(tf.float32, [None, pixel_height, pixel_width, n_channels])
-    z_vectors = tf.placeholder(tf.float32, [None, z_size])
-    is_training_discriminator = tf.placeholder(tf.bool, [])
-    is_training_generator = tf.placeholder(tf.bool, [])
+    true_images = tf.placeholder(
+        tf.float32,
+        [None, pixel_height, pixel_width, n_channels],
+        name="true_images"
+    )
+    z_vectors = tf.placeholder(
+        tf.float32,
+        [None, z_size],
+        name="z_vectors"
+    )
+    is_training_discriminator = tf.placeholder(
+        tf.bool,
+        [],
+        name="is_training_discriminator"
+    )
+    is_training_generator = tf.placeholder(
+        tf.bool,
+        [],
+        name="is_training_generator"
+    )
 
     fake_images = generator_forward(
         z_vectors,
@@ -434,8 +456,8 @@ def train():
             var_list=generator_variables + discriminator_variables + mutual_info_variables
         )
     else:
-        nll_mutual_info = tf.noop
-        train_mutual_info = tf.noop
+        nll_mutual_info = NOOP
+        train_mutual_info = NOOP
 
     train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
     train_generator = generator_solver.minimize(-generator_obj, var_list=generator_variables)
@@ -531,7 +553,14 @@ def train():
                         plt.close(fig)
                     else:
                         noise = sample_noise(batch_size)
-                        current_summary = sess.run(summary_op, {z_vectors:noise})
+                        current_summary = sess.run(
+                            summary_op,
+                            {
+                                z_vectors:noise,
+                                is_training_discriminator:False,
+                                is_training_generator:False
+                            }
+                        )
                         journalist.add_summary(current_summary)
                     journalist.flush()
 
