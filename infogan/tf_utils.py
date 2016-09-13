@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+from tensorflow.examples.tutorials.mnist import input_data
+
 
 def variables_in_current_scope():
     return tf.get_collection(tf.GraphKeys.VARIABLES, scope=tf.get_variable_scope().name)
