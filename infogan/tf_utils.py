@@ -68,7 +68,7 @@ def load_mnist_dataset():
     for dset in [mnist.train, mnist.validation, mnist.test]:
         num_images = len(dset.images)
         dset.images.shape = (num_images, pixel_height, pixel_width, n_channels)
-    return mnist
+    return mnist.train.images
 
 
 try:

@@ -13,7 +13,8 @@ from infogan.tf_utils import (
 from infogan.misc_utils import (
     next_unused_name,
     add_boolean_cli_arg,
-    create_progress_bar
+    create_progress_bar,
+    load_image_dataset
 )
 from infogan.noise_utils import (
     create_infogan_noise_sample,
@@ -23,7 +24,14 @@ from infogan.noise_utils import (
 TINY = 1e-6
 
 
-def generator_forward(z, image_size, is_training, reuse=None, name="generator", use_batch_norm=True):
+def generator_forward(z,
+                      image_height,
+                      image_width,
+                      n_channels,
+                      is_training,
+                      reuse=None,
+                      name="generator",
+                      use_batch_norm=True):
     with tf.variable_scope(name, reuse=reuse):
         z_shape = tf.shape(z)
 
@@ -43,7 +51,7 @@ def generator_forward(z, image_size, is_training, reuse=None, name="generator", 
         )
         out = layers.fully_connected(
             out,
-            num_outputs=(image_size // 4) * (image_size // 4) * 128,
+            num_outputs=(image_height // 4) * (image_width // 4) * 128,
             activation_fn=tf.nn.relu,
             normalizer_fn=fc_batch_norm,
             normalizer_params={"is_training": is_training, "updates_collections": None}
@@ -51,7 +59,7 @@ def generator_forward(z, image_size, is_training, reuse=None, name="generator", 
         out = tf.reshape(
             out,
             tf.pack([
-                z_shape[0], image_size // 4, image_size // 4, 128
+                z_shape[0], image_height // 4, image_width // 4, 128
             ])
         )
         out = layers.convolution2d_transpose(
@@ -65,7 +73,7 @@ def generator_forward(z, image_size, is_training, reuse=None, name="generator", 
         )
         out = layers.convolution2d_transpose(
             out,
-            num_outputs=1,
+            num_outputs=n_channels,
             kernel_size=4,
             stride=2,
             activation_fn=tf.nn.sigmoid
@@ -172,6 +180,7 @@ def reconstruct_mutual_info(true_categorical,
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--dataset", type=str, default=None)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
@@ -191,7 +200,16 @@ def train():
     args = parse_args()
 
     np.random.seed(args.seed)
-    mnist = load_mnist_dataset()
+
+    if args.dataset is None:
+        X = load_mnist_dataset()
+    else:
+        # load pngs and jpegs here
+        X = load_image_dataset(
+            args.dataset,
+            desired_width=28,
+            desired_height=28
+        )
 
     batch_size = args.batch_size
     n_epochs = args.epochs
@@ -216,23 +234,18 @@ def train():
 
     discriminator_lr = tf.get_variable("discriminator_lr", (), initializer=tf.constant_initializer(args.discriminator_lr))
     generator_lr = tf.get_variable("generator_lr", (), initializer=tf.constant_initializer(args.generator_lr))
-    pixel_height = 28
-    pixel_width = 28
-    n_channels = 1
+
+    n_images, image_height, image_width, n_channels = X.shape
 
     discriminator_lr_placeholder = tf.placeholder(tf.float32, (), name="discriminator_lr")
     generator_lr_placeholder = tf.placeholder(tf.float32, (), name="generator_lr")
     assign_discriminator_lr_op = discriminator_lr.assign(discriminator_lr_placeholder)
     assign_generator_lr_op = generator_lr.assign(generator_lr_placeholder)
 
-    X = mnist.train.images
-    n_images = len(X)
-    idxes = np.arange(n_images, dtype=np.int32)
-
     ## begin model
     true_images = tf.placeholder(
         tf.float32,
-        [None, pixel_height, pixel_width, n_channels],
+        [None, image_height, image_width, n_channels],
         name="true_images"
     )
     z_vectors = tf.placeholder(
@@ -253,7 +266,9 @@ def train():
 
     fake_images = generator_forward(
         z_vectors,
-        image_size=pixel_height,
+        image_height=image_height,
+        image_width=image_width,
+        n_channels=n_channels,
         is_training=is_training_generator,
         name="generator"
     )
@@ -368,6 +383,7 @@ def train():
         img_summaries["fake_images"] = tf.image_summary("fake images", fake_images, max_images=10)
     image_summary_op = tf.merge_summary(list(img_summaries.values())) if len(img_summaries) else NOOP
 
+    idxes = np.arange(n_images, dtype=np.int32)
     iters = 0
     with tf.Session() as sess:
         # pleasure
