@@ -9,17 +9,29 @@ def create_continuous_noise(num_continuous, style_size, size):
     return np.hstack([continuous, style])
 
 
-def create_infogan_noise_sample(num_categorical, num_continuous, style_size):
-    def sample(batch_size):
-        categorical = make_one_hot(
-            np.random.randint(0, num_categorical, size=(batch_size,)),
-            size=num_categorical
+def create_categorical_noise(categorical_cardinality, size):
+    noise = []
+    for cardinality in categorical_cardinality:
+        noise.append(
+            np.random.randint(0, cardinality, size=size)
         )
-        return np.hstack(
-            [
-                categorical,
-                create_continuous_noise(num_continuous, style_size, size=batch_size)
-            ]
+    return noise
+
+
+def encode_infogan_noise(categorical_cardinality, categorical_samples, continuous_samples):
+    noise = []
+    for cardinality, sample in zip(categorical_cardinality, categorical_samples):
+        noise.append(make_one_hot(sample, size=cardinality))
+    noise.append(continuous_samples)
+    return np.hstack(noise)
+
+
+def create_infogan_noise_sample(categorical_cardinality, num_continuous, style_size):
+    def sample(batch_size):
+        return encode_infogan_noise(
+            categorical_cardinality,
+            create_categorical_noise(categorical_cardinality, size=batch_size),
+            create_continuous_noise(num_continuous, style_size, size=batch_size)
         )
     return sample
 

@@ -1,5 +1,7 @@
 import argparse
 
+from os.path import join, realpath, dirname
+
 import numpy as np
 
 import tensorflow as tf
@@ -21,6 +23,8 @@ from infogan.noise_utils import (
     create_gan_noise_sample
 )
 
+SCRIPT_DIR = dirname(realpath(__file__))
+PROJECT_DIR = dirname(SCRIPT_DIR)
 TINY = 1e-6
 
 
@@ -29,6 +33,7 @@ def generator_forward(z,
                       image_width,
                       n_channels,
                       is_training,
+                      filter_count=128,
                       reuse=None,
                       name="generator",
                       use_batch_norm=True):
@@ -51,7 +56,7 @@ def generator_forward(z,
         )
         out = layers.fully_connected(
             out,
-            num_outputs=(image_height // 4) * (image_width // 4) * 128,
+            num_outputs=(image_height // 4) * (image_width // 4) * filter_count,
             activation_fn=tf.nn.relu,
             normalizer_fn=fc_batch_norm,
             normalizer_params={"is_training": is_training, "updates_collections": None}
@@ -59,12 +64,12 @@ def generator_forward(z,
         out = tf.reshape(
             out,
             tf.pack([
-                z_shape[0], image_height // 4, image_width // 4, 128
+                z_shape[0], image_height // 4, image_width // 4, filter_count
             ])
         )
         out = layers.convolution2d_transpose(
             out,
-            num_outputs=64,
+            num_outputs=filter_count // 2,
             kernel_size=4,
             stride=2,
             activation_fn=tf.nn.relu,
@@ -127,7 +132,7 @@ def discriminator_forward(img, is_training, reuse=None, name="discriminator", us
     return {"prob":prob, "hidden":out}
 
 
-def reconstruct_mutual_info(true_categorical,
+def reconstruct_mutual_info(true_categoricals,
                             true_continuous,
                             fix_std,
                             hidden,
@@ -143,7 +148,7 @@ def reconstruct_mutual_info(true_categorical,
             normalizer_params={"is_training":is_training}
         )
 
-        num_categorical = true_categorical.get_shape()[1].value
+        num_categorical = sum([true_categorical.get_shape()[1].value for true_categorical in true_categoricals])
         num_continuous = true_continuous.get_shape()[1].value
 
         out = layers.fully_connected(
@@ -153,8 +158,19 @@ def reconstruct_mutual_info(true_categorical,
         )
 
         # distribution logic
-        prob_categorical = tf.nn.softmax(out[:, :num_categorical])
-        ll_categorical = tf.reduce_sum(tf.log(prob_categorical + TINY) * true_categorical, reduction_indices=1)
+        offset = 0
+        ll_categorical = None
+        for true_categorical in true_categoricals:
+            cardinality = true_categorical.get_shape()[1].value
+            prob_categorical = tf.nn.softmax(out[:, offset:offset + cardinality])
+            ll_categorical_new = tf.reduce_sum(tf.log(prob_categorical + TINY) * true_categorical,
+                reduction_indices=1
+            )
+            if ll_categorical is None:
+                ll_categorical = ll_categorical_new
+            else:
+                ll_categorical = ll_categorical + ll_categorical_new
+            offset += cardinality
 
         mean_contig = out[:, num_categorical:num_categorical + num_continuous]
 
@@ -168,7 +184,9 @@ def reconstruct_mutual_info(true_categorical,
             - 0.5 * np.log(2 * np.pi) - tf.log(std_contig + TINY) - 0.5 * tf.square(epsilon),
             reduction_indices=1,
         )
-        mutual_info_lb = ll_categorical + ll_continuous
+        if ll_categorical is None:
+            ll_categorical = tf.constant(0.0, dtype=tf.float32)
+        mutual_info_lb = ll_continuous + ll_categorical
     return {
         "mutual_info": tf.reduce_mean(mutual_info_lb),
         "ll_categorical": tf.reduce_mean(ll_categorical),
@@ -184,9 +202,11 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
-    parser.add_argument("--num_categorical", type=int, default=10)
+    parser.add_argument("--categorical_cardinality", nargs="*", type=int, default=[10],
+                        help="Cardinality of the categorical variables used in the generator.")
     parser.add_argument("--num_continuous", type=int, default=2)
     parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--generator_filter_count", type=int, default=128)
     parser.add_argument("--style_size", type=int, default=62)
     parser.add_argument("--plot_every", type=int, default=200,
                         help="How often should plots be made (note: slow + costly).")
@@ -205,10 +225,12 @@ def train():
         X = load_mnist_dataset()
     else:
         # load pngs and jpegs here
+        X = load_mnist_dataset()
         X = load_image_dataset(
             args.dataset,
-            desired_width=28,
-            desired_height=28
+            desired_width=52,
+            desired_height=52,
+            value_range=(0.0, 1.0)
         )
 
     batch_size = args.batch_size
@@ -218,13 +240,14 @@ def train():
     plot_every = args.plot_every
     use_infogan = args.infogan
     style_size = args.style_size
-    num_categorical = args.num_categorical
+    categorical_cardinality = args.categorical_cardinality
     num_continuous = args.num_continuous
+    generator_filter_count = args.generator_filter_count
 
     if use_infogan:
-        z_size = style_size + num_categorical + num_continuous
+        z_size = style_size + sum(categorical_cardinality) + num_continuous
         sample_noise = create_infogan_noise_sample(
-            num_categorical,
+            categorical_cardinality,
             num_continuous,
             style_size
         )
@@ -232,8 +255,14 @@ def train():
         z_size = style_size
         sample_noise = create_gan_noise_sample(style_size)
 
-    discriminator_lr = tf.get_variable("discriminator_lr", (), initializer=tf.constant_initializer(args.discriminator_lr))
-    generator_lr = tf.get_variable("generator_lr", (), initializer=tf.constant_initializer(args.generator_lr))
+    discriminator_lr = tf.get_variable(
+        "discriminator_lr", (),
+        initializer=tf.constant_initializer(args.discriminator_lr)
+    )
+    generator_lr = tf.get_variable(
+        "generator_lr", (),
+        initializer=tf.constant_initializer(args.generator_lr)
+    )
 
     n_images, image_height, image_width, n_channels = X.shape
 
@@ -248,10 +277,10 @@ def train():
         [None, image_height, image_width, n_channels],
         name="true_images"
     )
-    z_vectors = tf.placeholder(
+    zc_vectors = tf.placeholder(
         tf.float32,
         [None, z_size],
-        name="z_vectors"
+        name="zc_vectors"
     )
     is_training_discriminator = tf.placeholder(
         tf.bool,
@@ -265,10 +294,11 @@ def train():
     )
 
     fake_images = generator_forward(
-        z_vectors,
+        zc_vectors,
         image_height=image_height,
         image_width=image_width,
         n_channels=n_channels,
+        filter_count=generator_filter_count,
         is_training=is_training_generator,
         name="generator"
     )
@@ -318,14 +348,25 @@ def train():
     generator_obj_summary = tf.scalar_summary("generator_objective", generator_obj)
 
     if use_infogan:
+        categorical_c_vectors = []
+        offset = 0
+        for cardinality in categorical_cardinality:
+            categorical_c_vectors.append(
+                zc_vectors[:, offset:offset+cardinality]
+            )
+            offset += cardinality
+
+        continuous_c_vector = zc_vectors[:, offset:offset + num_continuous]
+
         q_output = reconstruct_mutual_info(
-            z_vectors[:, :num_categorical],
-            z_vectors[:, num_categorical:num_categorical+num_continuous],
+            categorical_c_vectors,
+            continuous_c_vector,
             fix_std=fix_std,
             hidden=discriminator_fake["hidden"],
             is_training=is_training_discriminator,
             name="mutual_info"
         )
+
         mutual_info_objective = q_output["mutual_info"]
         mutual_info_variables = scope_variables("mutual_info")
         neg_mutual_info_objective = -mutual_info_objective
@@ -358,7 +399,13 @@ def train():
         entropy = NOOP
 
 
-    log_dir = next_unused_name("MNIST_v1_log/%s" % ("infogan" if use_infogan else "gan"))
+    log_dir = next_unused_name(
+        join(
+            PROJECT_DIR,
+            "MNIST_v1_log",
+            "infogan" if use_infogan else "gan"
+        )
+    )
     journalist = tf.train.SummaryWriter(
         log_dir,
         flush_secs=10
@@ -368,13 +415,13 @@ def train():
     img_summaries = {}
     if use_infogan:
         plotter = CategoricalPlotter(
-            num_categorical=num_categorical,
+            categorical_cardinality=categorical_cardinality,
             num_continuous=num_continuous,
             style_size=style_size,
             journalist=journalist,
             generate=lambda sess, x: sess.run(
                 fake_images,
-                {z_vectors:x, is_training_discriminator:False, is_training_generator:False}
+                {zc_vectors:x, is_training_discriminator:False, is_training_generator:False}
             )
         )
     else:
@@ -405,7 +452,7 @@ def train():
                     [train_discriminator, discriminator_obj_summary, discriminator_obj, neg_mutual_info_objective],
                     feed_dict={
                         true_images:batch,
-                        z_vectors:noise,
+                        zc_vectors:noise,
                         is_training_discriminator:True,
                         is_training_generator:True
                     }
@@ -421,7 +468,7 @@ def train():
                 _, _, summary_result2, gen_obj, infogan_obj = sess.run(
                     [train_generator, train_mutual_info, generator_obj_summary, generator_obj, neg_mutual_info_objective],
                     feed_dict={
-                        z_vectors:noise,
+                        zc_vectors:noise,
                         is_training_discriminator:True,
                         is_training_generator:True
                     }
@@ -439,13 +486,13 @@ def train():
 
                 if iters % plot_every == 0:
                     if use_infogan:
-                        plotter.generate_images(sess, 10)
+                        plotter.generate_images(sess, 10, iteration=iters)
                     else:
                         noise = sample_noise(batch_size)
                         current_summary = sess.run(
                             image_summary_op,
                             {
-                                z_vectors:noise,
+                                zc_vectors:noise,
                                 is_training_discriminator:False,
                                 is_training_generator:False
                             }

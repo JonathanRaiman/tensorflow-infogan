@@ -43,18 +43,28 @@ def create_progress_bar(message):
     return pbar
 
 
-def load_image_dataset(path, desired_height=-1, desired_width=-1):
+def load_image_dataset(path,
+                       desired_height=None,
+                       desired_width=None,
+                       value_range=None):
     data = []
     for fname in listdir(path):
         name = fname.lower()
         if name.endswith(".png") or name.endswith(".jpg") or name.endswith(".jpeg"):
             image = Image.open(join(path, fname))
             width, height = image.size
-            if desired_height > 0 and desired_width > 0:
+            if desired_height is not None and desired_width is not None:
                 if width != desired_width or height != desired_height:
                     image = image.resize((desired_width, desired_height), Image.BILINEAR)
             else:
                 desired_height = height
                 desired_width = width
-            data.append(np.array(image))
-    return np.stack(data)
+            data.append(np.array(image)[None])
+    concatenated = np.concatenate(data)
+    if value_range is not None:
+        concatenated = (
+            value_range[0] +
+            (concatenated / 255.0) * (value_range[1] - value_range[0])
+        )
+    return concatenated
+

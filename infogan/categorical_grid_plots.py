@@ -4,7 +4,9 @@ import tensorflow as tf
 from PIL import Image
 
 from infogan.numpy_utils import make_one_hot
-from infogan.noise_utils import create_continuous_noise
+from infogan.noise_utils import (
+    create_continuous_noise, create_categorical_noise, encode_infogan_noise
+)
 
 
 def create_image_strip(images, zoom=1, gutter=5):
@@ -45,7 +47,7 @@ def create_image_strip(images, zoom=1, gutter=5):
 class CategoricalPlotter(object):
     def __init__(self,
                  journalist,
-                 num_categorical,
+                 categorical_cardinality,
                  num_continuous,
                  style_size,
                  generate,
@@ -54,7 +56,7 @@ class CategoricalPlotter(object):
                  gutter=3):
         self._journalist = journalist
         self._gutter = gutter
-        self.num_categorical = num_categorical
+        self.categorical_cardinality = categorical_cardinality
         self.style_size = style_size
         self.num_continuous = num_continuous
         self._generate = generate
@@ -63,26 +65,42 @@ class CategoricalPlotter(object):
         self._placeholders = {}
         self._image_summaries = {}
 
-    def generate_categorical_variations(self, session, row_size):
+    def generate_categorical_variations(self, session, row_size, iteration=None):
         images = []
         continuous_noise = create_continuous_noise(
             num_continuous=self.num_continuous,
             style_size=self.style_size,
             size=row_size
         )
-        for i in range(self.num_categorical):
-            categorical_noise = make_one_hot(np.ones(row_size, dtype=np.int32) * i, size=self.num_categorical)
-            zs = np.hstack([categorical_noise, continuous_noise])
-            images.append(
-                (
-                    create_image_strip(
-                        self._generate(session, zs),
-                        zoom=self._zoom, gutter=self._gutter
-                    ),
-                    "categorical variable %d" % (i,)
+        categorical_noise = create_categorical_noise(
+            categorical_cardinality=self.categorical_cardinality,
+            size=row_size
+        )
+        for c_idx, cardinality in enumerate(self.categorical_cardinality):
+            categorical_noise_modified = [sample.copy() for sample in categorical_noise]
+            for i in range(cardinality):
+                categorical_noise_modified[c_idx][:] = i
+                z_c_vectors = encode_infogan_noise(
+                    categorical_cardinality=self.categorical_cardinality,
+                    categorical_samples=categorical_noise_modified,
+                    continuous_samples=continuous_noise
                 )
-            )
-        self._add_image_summary(session, images)
+                # show a simpler name when there is only a single categorical
+                # variable
+                if len(self.categorical_cardinality) > 1:
+                    name = "categorical variable %d-%d" % (c_idx, i,)
+                else:
+                    name = "category %d" % (i,)
+                images.append(
+                    (
+                        create_image_strip(
+                            self._generate(session, z_c_vectors),
+                            zoom=self._zoom, gutter=self._gutter
+                        ),
+                        name
+                    )
+                )
+        self._add_image_summary(session, images, iteration=iteration)
 
     def _get_placeholder(self, name):
         if name not in self._placeholders:
@@ -104,7 +122,7 @@ class CategoricalPlotter(object):
             self._image_summaries[joint_name] = tf.merge_summary(summaries)
         return self._image_summaries[joint_name]
 
-    def _add_image_summary(self, session, images):
+    def _add_image_summary(self, session, images, iteration=None):
         feed_dict = {}
         for image, placeholder_name in images:
             placeholder = self._get_placeholder(placeholder_name)
@@ -117,13 +135,16 @@ class CategoricalPlotter(object):
             summary_op, feed_dict=feed_dict
         )
 
-        self._journalist.add_summary(summary)
+        if iteration is None:
+            self._journalist.add_summary(summary)
+        else:
+            self._journalist.add_summary(summary, iteration)
         self._journalist.flush()
 
-    def generate_continuous_variations(self, session, row_size, variations=3):
-        categorical_fixed = make_one_hot(
-            np.random.randint(0, self.num_categorical, size=(variations,)),
-            size=self.num_categorical
+    def generate_continuous_variations(self, session, row_size, variations=3, iteration=None):
+        categorical_noise = create_categorical_noise(
+            self.categorical_cardinality,
+            size=variations
         )
         continuous_fixed = create_continuous_noise(
             num_continuous=self.num_continuous,
@@ -135,22 +156,23 @@ class CategoricalPlotter(object):
 
         for contig_idx in range(self.num_continuous):
             for var_idx in range(variations):
-                zs = np.zeros(
-                    (
-                        row_size,
-                        self.num_continuous + self.style_size + self.num_categorical
-                    )
+                continuous_modified = continuous_fixed[var_idx:var_idx+1, :].repeat(
+                    row_size, axis=0
                 )
-                # apply the fixed noise for the full row:
-                zs[:, self.num_categorical:] = continuous_fixed[var_idx, :]
-                zs[:, :self.num_categorical] = categorical_fixed[var_idx, :]
+
                 # make this continuous variable vary linearly over the row:
-                zs[:, self.num_categorical + contig_idx] = linear_variation
+                continuous_modified[:, contig_idx] = linear_variation
+
+                z_c_vectors = encode_infogan_noise(
+                    self.categorical_cardinality,
+                    [cat[var_idx:var_idx+1].repeat(row_size, axis=0) for cat in categorical_noise],
+                    continuous_modified
+                )
 
                 images.append(
                     (
                         create_image_strip(
-                            self._generate(session, zs),
+                            self._generate(session, z_c_vectors),
                             zoom=self._zoom, gutter=self._gutter
                         ),
                         "continuous variable %d, variation %d" % (
@@ -161,10 +183,14 @@ class CategoricalPlotter(object):
                 )
 
         self._add_image_summary(
-            session, images
+            session, images, iteration=iteration
         )
 
-    def generate_images(self, session, row_size):
-        self.generate_categorical_variations(session, row_size)
-        self.generate_continuous_variations(session, row_size, variations=3)
+    def generate_images(self, session, row_size, iteration=None):
+        self.generate_categorical_variations(
+            session, row_size, iteration=iteration
+        )
+        self.generate_continuous_variations(
+            session, row_size, variations=3, iteration=iteration
+        )
 
