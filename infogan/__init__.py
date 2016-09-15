@@ -1,6 +1,6 @@
 import argparse
 
-from os.path import join, realpath, dirname
+from os.path import join, realpath, dirname, basename
 
 import numpy as np
 
@@ -71,6 +71,8 @@ def discriminator_forward(img,
 
 def reconstruct_mutual_info(true_categoricals,
                             true_continuous,
+                            categorical_lambda,
+                            continuous_lambda,
                             fix_std,
                             hidden,
                             is_training,
@@ -123,7 +125,7 @@ def reconstruct_mutual_info(true_categoricals,
         )
         if ll_categorical is None:
             ll_categorical = tf.constant(0.0, dtype=tf.float32)
-        mutual_info_lb = ll_continuous + ll_categorical
+        mutual_info_lb = continuous_lambda * ll_continuous + categorical_lambda * ll_categorical
     return {
         "mutual_info": tf.reduce_mean(mutual_info_lb),
         "ll_categorical": tf.reduce_mean(ll_categorical),
@@ -140,6 +142,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
+    parser.add_argument("--categorical_lambda", type=float, default=1.0)
+    parser.add_argument("--continuous_lambda", type=float, default=1.0)
 
     parser.add_argument("--categorical_cardinality", nargs="*", type=int, default=[10],
                         help="Cardinality of the categorical variables used in the generator.")
@@ -184,6 +188,7 @@ def train():
     if args.dataset is None:
         assert args.scale_dataset == [28, 28]
         X = load_mnist_dataset()
+        dataset_name = "mnist"
     else:
         scaled_image_width, scaled_image_height = args.scale_dataset
 
@@ -194,6 +199,7 @@ def train():
             desired_height=scaled_image_height,
             value_range=(0.0, 1.0)
         )
+        dataset_name = basename(args.dataset.rstrip("/"))
 
 
 
@@ -315,6 +321,8 @@ def train():
         q_output = reconstruct_mutual_info(
             categorical_c_vectors,
             continuous_c_vector,
+            categorical_lambda=args.categorical_lambda,
+            continuous_lambda=args.continuous_lambda,
             fix_std=fix_std,
             hidden=discriminator_fake["hidden"],
             is_training=is_training_discriminator,
@@ -356,7 +364,7 @@ def train():
     log_dir = next_unused_name(
         join(
             PROJECT_DIR,
-            "MNIST_v1_log",
+            "%s_log" % (dataset_name,),
             "infogan" if use_infogan else "gan"
         )
     )
