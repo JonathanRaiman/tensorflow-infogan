@@ -1,5 +1,5 @@
 from os.path import exists, join
-from os import listdir
+from os import listdir, walk
 
 from PIL import Image
 
@@ -63,23 +63,30 @@ def create_progress_bar(message):
     return pbar
 
 
+def find_files_with_extension(path, extensions):
+    for basepath, directories, fnames in walk(path):
+        for fname in fnames:
+            name = fname.lower()
+            if any(name.endswith(ext) for ext in extensions):
+                yield join(basepath, fname)
+
+
+
 def load_image_dataset(path,
                        desired_height=None,
                        desired_width=None,
                        value_range=None):
     data = []
-    for fname in listdir(path):
-        name = fname.lower()
-        if name.endswith(".png") or name.endswith(".jpg") or name.endswith(".jpeg"):
-            image = Image.open(join(path, fname))
-            width, height = image.size
-            if desired_height is not None and desired_width is not None:
-                if width != desired_width or height != desired_height:
-                    image = image.resize((desired_width, desired_height), Image.BILINEAR)
-            else:
-                desired_height = height
-                desired_width = width
-            data.append(np.array(image)[None])
+    for fname in find_files_with_extension(path, [".png", ".jpg", ".jpeg"]):
+        image = Image.open(join(path, fname))
+        width, height = image.size
+        if desired_height is not None and desired_width is not None:
+            if width != desired_width or height != desired_height:
+                image = image.resize((desired_width, desired_height), Image.BILINEAR)
+        else:
+            desired_height = height
+            desired_width = width
+        data.append(np.array(image)[None])
     concatenated = np.concatenate(data)
     if value_range is not None:
         concatenated = (
