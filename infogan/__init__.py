@@ -136,9 +136,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--dataset", type=str, default=None)
+    parser.add_argument("--scale_dataset", type=int, nargs=2, default=[28,28])
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
+
     parser.add_argument("--categorical_cardinality", nargs="*", type=int, default=[10],
                         help="Cardinality of the categorical variables used in the generator.")
     parser.add_argument("--generator",
@@ -165,18 +167,6 @@ def train():
 
     np.random.seed(args.seed)
 
-    if args.dataset is None:
-        X = load_mnist_dataset()
-    else:
-        # load pngs and jpegs here
-        X = load_mnist_dataset()
-        X = load_image_dataset(
-            args.dataset,
-            desired_width=52, # TODO(jonathan): pick up from generator or add a command line arg (either or)...
-            desired_height=52,
-            value_range=(0.0, 1.0)
-        )
-
     batch_size = args.batch_size
     n_epochs = args.epochs
     use_batch_norm = args.use_batch_norm
@@ -188,6 +178,24 @@ def train():
     num_continuous = args.num_continuous
     generator_desc = args.generator
     discriminator_desc = args.discriminator
+
+
+
+    if args.dataset is None:
+        assert args.scale_dataset == [28, 28]
+        X = load_mnist_dataset()
+    else:
+        scaled_image_width, scaled_image_height = args.scale_dataset
+
+        # load pngs and jpegs here
+        X = load_image_dataset(
+            args.dataset,
+            desired_width=scaled_image_width, # TODO(jonathan): pick up from generator or add a command line arg (either or)...
+            desired_height=scaled_image_height,
+            value_range=(0.0, 1.0)
+        )
+
+
 
     if use_infogan:
         z_size = style_size + sum(categorical_cardinality) + num_continuous
