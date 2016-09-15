@@ -78,9 +78,8 @@ def load_image_dataset(path,
                        desired_height=None,
                        desired_width=None,
                        value_range=None,
-                       max_images=None):
-    data = []
-
+                       max_images=None,
+                       force_grayscale=False):
     image_paths = list(find_files_with_extension(path, [".png", ".jpg", ".jpeg"]))
     limit_msg = ''
     if max_images is not None and len(image_paths) > max_images:
@@ -91,6 +90,10 @@ def load_image_dataset(path,
 
     pb = create_progress_bar("Loading dataset ")
 
+
+    storage = None
+
+    image_idx = 0
     for fname in pb(image_paths):
         image = Image.open(join(path, fname))
         width, height = image.size
@@ -100,14 +103,28 @@ def load_image_dataset(path,
         else:
             desired_height = height
             desired_width = width
-        data.append(np.array(image)[None])
-    print("creating a tensor.", flush=True)
-    concatenated = np.concatenate(data)
+
+        if force_grayscale:
+            image = image.convert("L")
+
+        img = np.array(image)
+
+        if len(img.shape) == 2:
+            # extra channel for grayscale images
+            img = img[:, :, None]
+
+        if storage is None:
+            storage = np.empty((len(image_paths), img.shape[0], img.shape[1], img.shape[2]))
+
+        storage[image_idx] = img
+
+        image_idx += 1
+
     if value_range is not None:
-        concatenated = (
+        storage = (
             value_range[0] +
-            (concatenated / 255.0) * (value_range[1] - value_range[0])
+            (storage / 255.0) * (value_range[1] - value_range[0])
         )
     print("dataset loaded.", flush=True)
-    return concatenated
+    return storage
 

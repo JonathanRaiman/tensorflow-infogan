@@ -164,6 +164,7 @@ def parse_args():
     add_boolean_cli_arg(parser, "infogan", default=True, help="Train GAN or InfoGAN")
     add_boolean_cli_arg(parser, "use_batch_norm", default=True, help="Use batch normalization.")
     add_boolean_cli_arg(parser, "fix_std", default=True, help="Fix continuous var standard deviation to 1.")
+    add_boolean_cli_arg(parser, "force_grayscale", default=False, help="Convert images to single grayscale output channel.")
     return parser.parse_args()
 
 
@@ -201,7 +202,8 @@ def train():
             desired_width=scaled_image_width, # TODO(jonathan): pick up from generator or add a command line arg (either or)...
             desired_height=scaled_image_height,
             value_range=(0.0, 1.0),
-            max_images=args.max_images
+            max_images=args.max_images,
+            force_grayscale=args.force_grayscale
         )
         dataset_name = basename(args.dataset.rstrip("/"))
 
@@ -263,6 +265,10 @@ def train():
         name="generator",
         debug=True
     )
+
+    print("Generator produced images of shape %s" % (fake_images.get_shape()[1:]))
+    print("")
+
     discriminator_fake = discriminator_forward(
         fake_images,
         discriminator_desc,
