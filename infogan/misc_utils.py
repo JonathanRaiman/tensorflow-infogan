@@ -1,3 +1,5 @@
+import random
+
 from os.path import exists, join
 from os import listdir, walk
 
@@ -75,9 +77,21 @@ def find_files_with_extension(path, extensions):
 def load_image_dataset(path,
                        desired_height=None,
                        desired_width=None,
-                       value_range=None):
+                       value_range=None,
+                       max_images=None):
     data = []
-    for fname in find_files_with_extension(path, [".png", ".jpg", ".jpeg"]):
+
+    image_paths = list(find_files_with_extension(path, [".png", ".jpg", ".jpeg"]))
+    limit_msg = ''
+    if max_images is not None and len(image_paths) > max_images:
+        image_paths = random.sample(image_paths, max_images)
+        limit_msg = " (limited to %d images by command line argument)" % (max_images,)
+
+    print("Found %d images in %s%s." % (len(image_paths), path, limit_msg))
+
+    pb = create_progress_bar("Loading dataset ")
+
+    for fname in pb(image_paths):
         image = Image.open(join(path, fname))
         width, height = image.size
         if desired_height is not None and desired_width is not None:
@@ -87,11 +101,13 @@ def load_image_dataset(path,
             desired_height = height
             desired_width = width
         data.append(np.array(image)[None])
+    print("creating a tensor.", flush=True)
     concatenated = np.concatenate(data)
     if value_range is not None:
         concatenated = (
             value_range[0] +
             (concatenated / 255.0) * (value_range[1] - value_range[0])
         )
+    print("dataset loaded.", flush=True)
     return concatenated
 

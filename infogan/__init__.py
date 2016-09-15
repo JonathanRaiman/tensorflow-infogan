@@ -138,6 +138,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--dataset", type=str, default=None)
+    parser.add_argument("--max_images", type=int, default=None)
     parser.add_argument("--scale_dataset", type=int, nargs=2, default=[28,28])
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
@@ -188,6 +189,8 @@ def train():
     if args.dataset is None:
         assert args.scale_dataset == [28, 28]
         X = load_mnist_dataset()
+        if args.max_images is not None:
+            X = X[:args.max_images]
         dataset_name = "mnist"
     else:
         scaled_image_width, scaled_image_height = args.scale_dataset
@@ -197,7 +200,8 @@ def train():
             args.dataset,
             desired_width=scaled_image_width, # TODO(jonathan): pick up from generator or add a command line arg (either or)...
             desired_height=scaled_image_height,
-            value_range=(0.0, 1.0)
+            value_range=(0.0, 1.0),
+            max_images=args.max_images
         )
         dataset_name = basename(args.dataset.rstrip("/"))
 
