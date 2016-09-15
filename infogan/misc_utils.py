@@ -114,7 +114,7 @@ def load_image_dataset(path,
             img = img[:, :, None]
 
         if storage is None:
-            storage = np.empty((len(image_paths), img.shape[0], img.shape[1], img.shape[2]))
+            storage = np.empty((len(image_paths), img.shape[0], img.shape[1], img.shape[2]), dtype=np.float32)
 
         storage[image_idx] = img
 
@@ -122,8 +122,7 @@ def load_image_dataset(path,
 
     if value_range is not None:
         storage = (
-            value_range[0] +
-            (storage / 255.0) * (value_range[1] - value_range[0])
+            value_range[0] + (storage / 255.0) * (value_range[1] - value_range[0])
         )
     print("dataset loaded.", flush=True)
     return storage
