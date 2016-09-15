@@ -9,126 +9,63 @@ import tensorflow.contrib.layers as layers
 
 from .categorical_grid_plots import CategoricalPlotter
 from infogan.tf_utils import (
-    scope_variables, NOOP, leaky_rectify, identity,
-    conv_batch_norm, load_mnist_dataset
+    scope_variables,
+    NOOP,
+    load_mnist_dataset,
+    run_network,
+    leaky_rectify,
 )
 from infogan.misc_utils import (
     next_unused_name,
     add_boolean_cli_arg,
     create_progress_bar,
-    load_image_dataset
+    load_image_dataset,
 )
 from infogan.noise_utils import (
     create_infogan_noise_sample,
-    create_gan_noise_sample
+    create_gan_noise_sample,
 )
 
 SCRIPT_DIR = dirname(realpath(__file__))
 PROJECT_DIR = dirname(SCRIPT_DIR)
 TINY = 1e-6
 
-
 def generator_forward(z,
-                      image_height,
-                      image_width,
-                      n_channels,
+                      network_description,
                       is_training,
-                      filter_count=128,
                       reuse=None,
                       name="generator",
-                      use_batch_norm=True):
+                      use_batch_norm=True,
+                      debug=False):
     with tf.variable_scope(name, reuse=reuse):
-        z_shape = tf.shape(z)
+        return run_network(z,
+                           network_description,
+                           is_training=is_training,
+                           use_batch_norm=use_batch_norm,
+                           debug=debug,
+                           strip_batchnorm_from_last_layer=True)
 
-        if use_batch_norm:
-            fc_batch_norm = layers.batch_norm
-            cnn_batch_norm = conv_batch_norm
-        else:
-            fc_batch_norm = None
-            cnn_batch_norm = None
-
-        out = layers.fully_connected(
-            z,
-            num_outputs=1024,
-            activation_fn=tf.nn.relu,
-            normalizer_fn=fc_batch_norm,
-            normalizer_params={"is_training": is_training, "updates_collections": None}
-        )
-        out = layers.fully_connected(
-            out,
-            num_outputs=(image_height // 4) * (image_width // 4) * filter_count,
-            activation_fn=tf.nn.relu,
-            normalizer_fn=fc_batch_norm,
-            normalizer_params={"is_training": is_training, "updates_collections": None}
-        )
-        out = tf.reshape(
-            out,
-            tf.pack([
-                z_shape[0], image_height // 4, image_width // 4, filter_count
-            ])
-        )
-        out = layers.convolution2d_transpose(
-            out,
-            num_outputs=filter_count // 2,
-            kernel_size=4,
-            stride=2,
-            activation_fn=tf.nn.relu,
-            normalizer_fn=cnn_batch_norm,
-            normalizer_params={"is_training": is_training}
-        )
-        out = layers.convolution2d_transpose(
-            out,
-            num_outputs=n_channels,
-            kernel_size=4,
-            stride=2,
-            activation_fn=tf.nn.sigmoid
-        )
-    return out
-
-
-def discriminator_forward(img, is_training, reuse=None, name="discriminator", use_batch_norm=True):
+def discriminator_forward(img,
+                          network_description,
+                          is_training,
+                          reuse=None,
+                          name="discriminator",
+                          use_batch_norm=True,
+                          debug=False):
     with tf.variable_scope(name, reuse=reuse):
-
-        if use_batch_norm:
-            fc_batch_norm = layers.batch_norm
-            cnn_batch_norm = conv_batch_norm
-        else:
-            fc_batch_norm = None
-            cnn_batch_norm = None
-
-        out = layers.convolution2d(
-            img,
-            num_outputs=64,
-            kernel_size=4,
-            stride=2,
-            activation_fn=leaky_rectify,
-            scope="my_conv1"
-        )
-        out = layers.convolution2d(
-            out,
-            num_outputs=128,
-            kernel_size=4,
-            stride=2,
-            normalizer_params={"is_training": is_training},
-            normalizer_fn=cnn_batch_norm,
-            activation_fn=leaky_rectify,
-            scope="my_conv2"
-        )
+        out = run_network(img,
+                          network_description,
+                          is_training=is_training,
+                          use_batch_norm=use_batch_norm,
+                          debug=debug)
         out = layers.flatten(out)
-        out = layers.fully_connected(
-            out,
-            num_outputs=1024,
-            activation_fn=leaky_rectify,
-            normalizer_params={"is_training": is_training, "updates_collections": None},
-            normalizer_fn=fc_batch_norm,
-            scope="my_fc1"
-        )
         prob = layers.fully_connected(
             out,
             num_outputs=1,
             activation_fn=tf.nn.sigmoid,
-            scope="my_fc2"
+            scope="prob_projection"
         )
+
     return {"prob":prob, "hidden":out}
 
 
@@ -204,9 +141,16 @@ def parse_args():
     parser.add_argument("--discriminator_lr", type=float, default=2e-4)
     parser.add_argument("--categorical_cardinality", nargs="*", type=int, default=[10],
                         help="Cardinality of the categorical variables used in the generator.")
+    parser.add_argument("--generator",
+                        type=str,
+                        default="fc:1024,fc:7x7x128,reshape:7:7:128,deconv:4:2:64,deconv:4:2:1:sigmoid",
+                        help="Generator network architecture (call tech support).")
+    parser.add_argument("--discriminator",
+                        type=str,
+                        default="conv:4:2:64:lrelu,conv:4:2:128:lrelu,fc:1024:lrelu",
+                        help="Discriminator network architecture, except last layer (call tech support).")
     parser.add_argument("--num_continuous", type=int, default=2)
     parser.add_argument("--seed", type=int, default=1234)
-    parser.add_argument("--generator_filter_count", type=int, default=128)
     parser.add_argument("--style_size", type=int, default=62)
     parser.add_argument("--plot_every", type=int, default=200,
                         help="How often should plots be made (note: slow + costly).")
@@ -228,7 +172,7 @@ def train():
         X = load_mnist_dataset()
         X = load_image_dataset(
             args.dataset,
-            desired_width=52,
+            desired_width=52, # TODO(jonathan): pick up from generator or add a command line arg (either or)...
             desired_height=52,
             value_range=(0.0, 1.0)
         )
@@ -242,7 +186,8 @@ def train():
     style_size = args.style_size
     categorical_cardinality = args.categorical_cardinality
     num_continuous = args.num_continuous
-    generator_filter_count = args.generator_filter_count
+    generator_desc = args.generator
+    discriminator_desc = args.discriminator
 
     if use_infogan:
         z_size = style_size + sum(categorical_cardinality) + num_continuous
@@ -295,23 +240,24 @@ def train():
 
     fake_images = generator_forward(
         zc_vectors,
-        image_height=image_height,
-        image_width=image_width,
-        n_channels=n_channels,
-        filter_count=generator_filter_count,
+        generator_desc,
         is_training=is_training_generator,
-        name="generator"
+        name="generator",
+        debug=True
     )
     discriminator_fake = discriminator_forward(
         fake_images,
-        is_training_discriminator,
+        discriminator_desc,
+        is_training=is_training_discriminator,
         name="discriminator",
-        use_batch_norm=use_batch_norm
+        use_batch_norm=use_batch_norm,
+        debug=True
     )
     prob_fake = discriminator_fake["prob"]
     discriminator_true = discriminator_forward(
         true_images,
-        is_training_discriminator,
+        discriminator_desc,
+        is_training=is_training_discriminator,
         reuse=True,
         name="discriminator",
         use_batch_norm=use_batch_norm

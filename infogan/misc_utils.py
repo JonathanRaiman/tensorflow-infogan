@@ -6,6 +6,26 @@ from PIL import Image
 import numpy as np
 import progressbar
 
+
+
+OPS =  [
+   ('+', lambda a, b: a+b),
+   ('-', lambda a, b: a-b),
+   ('*', lambda a, b: a*b),
+   ('x', lambda a, b: a*b),
+   ('/', lambda a, b: a//b),
+]
+
+
+def parse_math(s):
+   for operator, f in OPS:
+       try:
+           idx = s.index(operator)
+           return f(parse_math(s[:idx]), parse_math(s[idx+1:]))
+       except ValueError:
+           pass
+   return int(s)
+
 def next_unused_name(name):
     save_name = name
     name_iteration = 0
