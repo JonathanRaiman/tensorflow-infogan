@@ -5,7 +5,7 @@ from tensorflow.examples.tutorials.mnist import input_data
 from infogan.misc_utils import parse_math
 
 def variables_in_current_scope():
-    return tf.get_collection(tf.GraphKeys.VARIABLES, scope=tf.get_variable_scope().name)
+    return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name)
 
 
 def scope_variables(name):
