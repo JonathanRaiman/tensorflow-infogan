@@ -314,8 +314,8 @@ def train():
 
     train_discriminator = discriminator_solver.minimize(-discriminator_obj, var_list=discriminator_variables)
     train_generator = generator_solver.minimize(-generator_obj, var_list=generator_variables)
-    discriminator_obj_summary = tf.scalar_summary("discriminator_objective", discriminator_obj)
-    generator_obj_summary = tf.scalar_summary("generator_objective", generator_obj)
+    discriminator_obj_summary = tf.summary.scalar("discriminator_objective", discriminator_obj)
+    generator_obj_summary = tf.summary.scalar("generator_objective", generator_obj)
 
     if use_infogan:
         categorical_c_vectors = []
@@ -350,11 +350,11 @@ def train():
         ll_continuous = q_output["ll_continuous"]
         std_contig = q_output["std_contig"]
 
-        mutual_info_obj_summary = tf.scalar_summary("mutual_info_objective", mutual_info_objective)
-        ll_categorical_obj_summary = tf.scalar_summary("ll_categorical_objective", ll_categorical)
-        ll_continuous_obj_summary = tf.scalar_summary("ll_continuous_objective", ll_continuous)
-        std_contig_summary = tf.scalar_summary("std_contig", std_contig)
-        generator_obj_summary = tf.merge_summary([
+        mutual_info_obj_summary = tf.summary.scalar("mutual_info_objective", mutual_info_objective)
+        ll_categorical_obj_summary = tf.summary.scalar("ll_categorical_objective", ll_categorical)
+        ll_continuous_obj_summary = tf.summary.scalar("ll_continuous_objective", ll_continuous)
+        std_contig_summary = tf.summary.scalar("std_contig", std_contig)
+        generator_obj_summary = tf.summary.merge([
             generator_obj_summary,
             mutual_info_obj_summary,
             ll_categorical_obj_summary,
@@ -378,7 +378,7 @@ def train():
             "infogan" if use_infogan else "gan"
         )
     )
-    journalist = tf.train.SummaryWriter(
+    journalist = tf.summary.FileWriter(
         log_dir,
         flush_secs=10
     )
@@ -399,14 +399,14 @@ def train():
     else:
         image_placeholder = None
         plotter = None
-        img_summaries["fake_images"] = tf.image_summary("fake images", fake_images, max_images=10)
-    image_summary_op = tf.merge_summary(list(img_summaries.values())) if len(img_summaries) else NOOP
+        img_summaries["fake_images"] = tf.summary.image("fake images", fake_images, max_images=10)
+    image_summary_op = tf.summary.merge(list(img_summaries.values())) if len(img_summaries) else NOOP
 
     idxes = np.arange(n_images, dtype=np.int32)
     iters = 0
     with tf.Session() as sess:
         # pleasure
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
         # content
         for epoch in range(n_epochs):
             disc_epoch_obj = []
