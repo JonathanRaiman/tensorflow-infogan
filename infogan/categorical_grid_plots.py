@@ -114,12 +114,12 @@ class CategoricalPlotter(object):
             for name in names:
                 image_placeholder = self._get_placeholder(name)
                 decoded_image = tf.expand_dims(image_placeholder, 0)
-                image_summary_op = tf.image_summary(
+                image_summary_op = tf.summary.image(
                     name,
-                    decoded_image, max_images=1
+                    decoded_image, max_outputs=1
                 )
                 summaries.append(image_summary_op)
-            self._image_summaries[joint_name] = tf.merge_summary(summaries)
+            self._image_summaries[joint_name] = tf.summary.merge(summaries)
         return self._image_summaries[joint_name]
 
     def _add_image_summary(self, session, images, iteration=None):
